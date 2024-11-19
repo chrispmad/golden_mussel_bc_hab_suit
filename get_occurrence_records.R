@@ -100,7 +100,10 @@ ggplot() +
 inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_filter(gm_sf) |> terra::vect()
 
 # Mask and crop the hydroclim data with these countries
-hydroclim_m = terra::crop(hydroclim, )
+hydroclim_m = terra::mask(terra::crop(hydroclim, inf_countries), inf_countries)
+
+terra::
+
 pseudoabsences <- predicts::backgroundSample(hydroclim, 
                                              p = terra::vect(gm_sf), 
                                              n = 10000,
