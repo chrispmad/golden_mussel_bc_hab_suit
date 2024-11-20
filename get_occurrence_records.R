@@ -32,7 +32,10 @@ gm_sf = gm_oc |>
   sf::st_as_sf(coords = c("longitude","latitude"), crs = 4326)
 
 # Read in the hydroclimatic variables downloaded from https://www.earthenv.org/
-hydroclim = terra::rast("data/hydroclim_average+sum.nc")
+# hydroclim = terra::rast("data/hydroclim_average+sum.nc")
+# Once we've cropped and masked this to infected countries, just read that 
+# file in!
+hydroclim = terra::rast(paste0(onedrive_wd,"raster/hydroclim.tif"))
 
 # These are the variables that are contained in this file.
 
@@ -79,6 +82,7 @@ hydroclim = terra::rast("data/hydroclim_average+sum.nc")
 # Snag polygons for all countries in the world. For mapping purposes!
 whole_world = geodata::world(path = 'data')
 
+
 # Snag polygon for BC.
 bc = bcmaps::bc_bound() |> dplyr::summarise() |> sf::st_transform(4326) |> terra::vect()
 
@@ -87,39 +91,55 @@ ggplot() +
   tidyterra::geom_spatvector(data = bc, fill = 'purple') + 
   geom_sf(data = gm_sf, col = 'red')
 
-# ggplot() + 
-#   tidyterra::geom_spatvector(data = whole_world) +
-#   geom_sf(data = water_chem_sf, aes(col = Ca)) + 
-#   geom_sf(data = gm_sf, col = 'red')
-
 # Oh no! Bad data coverage for water chemistry variables!! Bah.
-
-# source("../ais_prioritization_models/scripts/utils/run_maxent_f.R")
 
 # Find which countries have at least one recorded Golden Mussel.
 inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_filter(gm_sf) |> terra::vect()
 
 # Mask and crop the hydroclim data with these countries
-hydroclim_m = terra::mask(terra::crop(hydroclim, inf_countries), inf_countries)
+# hydroclim_m = terra::mask(terra::crop(hydroclim, inf_countries), inf_countries)
 
-terra::
+# 1. Simplify the raster?
+# 2. Do we 'do' each country separately, to use smaller rasters?
+# 3. Just straight into MaxEnt?
 
-pseudoabsences <- predicts::backgroundSample(hydroclim, 
+# avg_mean_temp = hydroclim[[1]]
+# avg_mean_temp[is.na(avg_mean_temp)]
+# 
+# terra::plot(hydroclim[[1]])
+# 
+# usa_hydroclim = terra::crop(hydroclim[[1]], inf_countries[inf_countries$NAME_0 %in% c("United States"),])
+# 
+# usa_hydroclim_just_usa = terra::crop(usa_hydroclim, c(-180,-50, 18, 72))
+# 
+# usa_pseudos = predicts::backgroundSample(usa_hydroclim_just_usa, 
+#                            p = terra::vect(gm_sf), 
+#                            n = 10000,
+#                            extf = 0.9) |> 
+#   tidyr::as_tibble()
+# 
+# names(usa_pseudos) = c('lon','lat')
+# 
+# ggplot() + 
+#   tidyterra::geom_spatraster(data = usa_hydroclim_just_usa) + 
+#   geom_sf(data = sf::st_as_sf(usa_pseudos, coords = c('lon','lat'), crs = 4326))
+# 
+# terra::plot(usa_pseudos, add = T)
+# nrow(usa_pseudos)
+# 
+# usa_pseudos
+
+pseudoabsences <- predicts::backgroundSample(hydroclim[[1]], 
                                              p = terra::vect(gm_sf), 
                                              n = 10000,
                                              extf = 0.9) |> 
   as.data.frame()
 
-# maxent_test = run_maxent(species = gm_sf,
-#            onedrive_path = onedrive_wd,
-#            predictor_data = hydroclim,
-#            output_folder = 'output/'
-#            )
-
-ENMevaluate(occs = presences,
-            envs = predictor_data,
-            bg = pseudoabsences,
+am_i_mortal = ENMevaluate(occs = gm_oc |> dplyr::select(latitude, longitude),
+            envs = hydroclim[[1]],
+            # bg = pseudoabsences,
+            n.bg = 10000,
             algorithm = 'maxent.jar',
             partitions = 'block',
-            tune.args = list(fc = feature_classes,
-                             rm = regularisation_levels))
+            tune.args = list(fc = 'LQ',
+                             rm = c(3)))
