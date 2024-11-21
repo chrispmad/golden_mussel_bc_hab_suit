@@ -129,17 +129,47 @@ inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_f
 # 
 # usa_pseudos
 
-pseudoabsences <- predicts::backgroundSample(hydroclim[[1]], 
-                                             p = terra::vect(gm_sf), 
-                                             n = 10000,
-                                             extf = 0.9) |> 
-  as.data.frame()
+# pseudoabsences <- predicts::backgroundSample(hydroclim[[1]], 
+#                                              p = terra::vect(gm_sf), 
+#                                              n = 10000,
+#                                              extf = 0.9) |> 
+#   as.data.frame()
 
-am_i_mortal = ENMevaluate(occs = gm_oc |> dplyr::select(latitude, longitude),
-            envs = hydroclim[[1]],
-            # bg = pseudoabsences,
-            n.bg = 10000,
+#hydroclim_small<-aggregate(hydroclim, fact = 8)
+target_resolution <- res(hydroclim) * 5
+target_raster <- rast(nrows = nrow(hydroclim) / 10, ncols = ncol(hydroclim) / 10, 
+                      ext = ext(hydroclim), crs = crs(hydroclim), resolution = target_resolution)
+hydroclim_small <- resample(hydroclim, target_raster)
+
+plot(hydroclim_small)
+
+terra::writeRaster(hydroclim_small, paste0(onedrive_wd,"raster/hydroclim_reduced.tif"))
+
+ plot(hydroclim_small)
+ hydroclim_small[[1]]
+ 
+ 
+ pseudos = predicts::backgroundSample(hydroclim_small[[1]],
+                            p = terra::vect(gm_sf),
+                            n = 10000,
+                            extf = 0.9,
+                            tryf = 500) |>
+   tidyr::as_tibble()
+ #names(pseudos)<-c("latitude", "longitude")
+ 
+ 
+modVals<-gm_oc |> dplyr::select(latitude, longitude)
+modVals<-modVals[complete.cases(modVals),]
+ names(modVals)<-c("x","y")
+ names(hydroclim_small)<-gsub("=", "", names(hydroclim_small))
+ names(hydroclim_small)<-gsub("_", "", names(hydroclim_small))
+ 
+am_i_mortal = ENMevaluate(occs = modVals,
+            envs = hydroclim_small,
+            bg = pseudos,
             algorithm = 'maxent.jar',
             partitions = 'block',
             tune.args = list(fc = 'LQ',
-                             rm = c(3)))
+                             rm = 1))
+
+            
