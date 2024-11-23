@@ -1,0 +1,228 @@
+---
+title: "Golden Mussel Habitat Suitability Assessment"
+author: "Chris Madsen & John Phelan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(rinat)
+library(tidyverse)
+# library(DBI)
+library(bcinvadeR)
+library(terra)
+library(sf)
+library(geodata)
+library(ggpubr)
+library(ecospat)
+library(ENMeval)
+library(readxl)
+library(ENMTools)
+library(data.table)
+
+# Set up file paths
+lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
+proj_wd = getwd()
+onedrive_wd = paste0(str_extract(getwd(),"C:/Users/[A-Z]+/"),"OneDrive - Government of BC/data/")
+
+# Options
+reclip_hydroclim = FALSE
+
+rerun_maxent_in_asia = FALSE
+
+chosen_rasters = c("annual_mean_temp","max_temp_warmest_month")
+
+source("get_occurrence_records.R")
+
+source("clip_predictor_data_to_areas_of_interest.R")
+
+source("read_in_predictor_data.R")
+
+source("split_occurrence_records_by_area.R")
+
+source("get_pseudo_occurrences.R")
+
+```
+
+# Results {.tabset}
+
+## Model Details 
+
+```{r}
+
+# ---------------------------------------
+# STEP 1: TRAIN MODEL ON ASIAN DATA
+# ---------------------------------------
+
+if(rerun_maxent_in_asia){
+  asia_model = ENMevaluate(occs = asian_occs,
+                           envs = asian_country_r,
+                           bg = asian_pseudos,
+                           algorithm = 'maxent.jar',
+                           partitions = 'block',
+                           tune.args = list(fc = 'LQ',
+                                            rm = c(1:5)))
+  saveRDS(asia_model, "Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
+  invisible(gc())
+  # Chris' poor machine can barely run the above maxent model.
+} else {
+  asia_model = readRDS("Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
+}
+
+# The resulting 5 models seem to all have the same auc.train. Let's just use the first one.
+asia_best_model <- asia_model@models[[which.min(asia_model@results$AICc)]]
+
+model_results_df = as.data.frame(asia_best_model@results)
+model_results_df$var = row.names(model_results_df)
+asia_model_AUC = model_results_df[model_results_df$var == 'Training.AUC',]$V1
+
+asia_best_model_preds = terra::rast(asia_model@predictions[[which.min(asia_model@results$AICc)]])
+```
+
+Note: Model parameters include:
+
+Tuning Settings:
+```{r}
+asia_model@tune.settings |> knitr::kable()
+```
+
+Results:
+```{r}
+asia_model@results |> knitr::kable()
+```
+
+Variable Importance in top model:
+```{r}
+asia_model@variable.importance[[which.min(asia_model@results$AICc)]] |> knitr::kable()
+```
+
+Note: This model's Training Area-Under-Curve (AUC) value was `r asia_model_AUC` (values nearer to 1 represent models that are better able to accurately predict the occurrence points given the predictor variables, and an AUC value of 0.5 represents random predictions)
+
+## Model Results
+
+### Training Model on Asian Occurrence Data {.tabset}
+
+
+
+#### MaxEnt Model for Asian Extent
+
+```{r}
+ggplot() + 
+  tidyterra::geom_spatraster(data = asia_best_model_preds) + 
+  geom_point(data = asian_occs, aes(x=x, y=y)) + 
+  scale_fill_distiller(palette = 'Spectral') + 
+  labs(fill = 'Suitable\nHabitat')
+```
+
+```{r}
+# Identify what the minimum predicted suitability was for the known occurrence points.
+asia_min_suitability_with_occ = invisible(min(terra::extract(asia_best_model_preds, asian_occs), na.rm=T))
+```
+
+Note: minimum predicted suitability with a known occurrence of Golden Mussel: `r asia_min_suitability_with_occ`.
+
+#### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
+```{r}
+# Apply to convert the predictions for Asia into habitat/not habitat
+asia_preds_hab_or_not = asia_best_model_preds > asia_min_suitability_with_occ
+
+ggplot() + 
+  tidyterra::geom_spatraster(data = asia_preds_hab_or_not) + 
+  geom_point(data = asian_occs, aes(x=x, y=y)) + 
+  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
+  labs(fill = 'Suitable\nHabitat')
+```
+
+### Applying Trained Model on South American Extent {.tabset}
+
+#### MaxEnt Model for South American Extent
+
+```{r}
+# Apply the Asia model to South America.
+south_america_preds = terra::predict(south_american_country_r, asia_best_model, type = "response", na.rm=T)
+
+ggplot() + 
+  tidyterra::geom_spatraster(data = south_america_preds) + 
+  geom_point(data = south_american_occs, aes(x=x, y=y)) + 
+  scale_fill_distiller(palette = 'Spectral') + 
+  labs(fill = 'Suitable\nHabitat')
+```
+
+#### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
+
+```{r}
+# Apply the minimum suitable habitat for which we found occurrences in asia,
+# to calculate a habitat-or-not for South America.
+
+south_america_preds_hab_or_not = invisible(south_america_preds > asia_min_suitability_with_occ)
+
+ggplot() + 
+  tidyterra::geom_spatraster(data = south_america_preds_hab_or_not) + 
+  geom_point(data = south_american_occs, aes(x=x, y=y)) + 
+  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
+  labs(fill = 'Suitable\nHabitat')
+```
+
+### Applying Trained Model on North American Extent {.tabset}
+
+#### MaxEnt Model for North American Extent
+
+```{r}
+# ---------------------------------------
+# STEP 3: APPLY MODEL TO NORTH AMERICA
+# ---------------------------------------
+
+# Apply the Asia model to North America.
+north_america_preds = terra::predict(north_american_country_r, asia_best_model, type = "response", na.rm=T)
+
+ggplot() + 
+  tidyterra::geom_spatraster(data = north_america_preds) + 
+  geom_point(data = north_american_occs, aes(x=x, y=y)) + 
+  scale_fill_distiller(palette = 'Spectral') + 
+  labs(fill = 'Suitable\nHabitat')
+```
+
+#### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
+
+```{r}
+# Apply the minimum suitable habitat for which we found occurrences in asia,
+# to calculate a habitat-or-not for north America.
+
+north_america_preds_hab_or_not = invisible(north_america_preds > asia_min_suitability_with_occ)
+
+ggplot() + 
+  tidyterra::geom_spatraster(data = north_america_preds_hab_or_not) + 
+  geom_point(data = north_american_occs, aes(x=x, y=y)) + 
+  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
+  labs(fill = 'Suitable\nHabitat')
+
+```
+
+### Applying Trained Model on just British Columbia {.tabset}
+
+#### MaxEnt Model for BC Extent
+
+```{r}
+bc_preds = terra::mask(terra::crop(north_america_preds, bc), bc)
+
+ggplot() + 
+  tidyterra::geom_spatraster(data = bc_preds) + 
+  scale_fill_distiller(palette = 'Spectral') + 
+  labs(fill = 'Suitable\nHabitat')
+```
+
+#### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
+
+```{r}
+# Apply the minimum suitable habitat for which we found occurrences in asia,
+# to calculate a habitat-or-not for north America.
+
+bc_preds_hab_or_not = invisible(bc_preds > asia_min_suitability_with_occ)
+
+ggplot() + 
+  tidyterra::geom_spatraster(data = bc_preds_hab_or_not) + 
+  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
+  labs(fill = 'Suitable\nHabitat')
+
+```
