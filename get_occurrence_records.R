@@ -136,19 +136,21 @@ inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_f
 #   as.data.frame()
 
 #hydroclim_small<-aggregate(hydroclim, fact = 8)
-target_resolution <- res(hydroclim) * 5
-target_raster <- rast(nrows = nrow(hydroclim) / 10, ncols = ncol(hydroclim) / 10, 
-                      ext = ext(hydroclim), crs = crs(hydroclim), resolution = target_resolution)
-hydroclim_small <- resample(hydroclim, target_raster)
-
-plot(hydroclim_small)
-
-terra::writeRaster(hydroclim_small, paste0(onedrive_wd,"raster/hydroclim_reduced.tif"))
-
- plot(hydroclim_small)
- hydroclim_small[[1]]
+# target_resolution <- res(hydroclim) * 5
+# target_raster <- rast(nrows = nrow(hydroclim) / 10, ncols = ncol(hydroclim) / 10, 
+#                       ext = ext(hydroclim), crs = crs(hydroclim), resolution = target_resolution)
+# hydroclim_small <- resample(hydroclim, target_raster)
+# 
+# plot(hydroclim_small)
+# 
+# terra::writeRaster(hydroclim_small, paste0(onedrive_wd,"raster/hydroclim_reduced.tif"))
+# 
+#  plot(hydroclim_small)
+#  hydroclim_small[[1]]
  
- 
+ #By country
+
+
  pseudos = predicts::backgroundSample(hydroclim_small[[1]],
                             p = terra::vect(gm_sf),
                             n = 10000,
