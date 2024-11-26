@@ -19,10 +19,12 @@ inf_countries = terra::vect(inf_countries)
 inf_countries = terra::project(inf_countries, terra::crs("GEOGCRS[\"unknown\",\n    DATUM[\"unnamed\",\n        ELLIPSOID[\"Spheroid\",6378137,298.257223563,\n            LENGTHUNIT[\"metre\",1,\n                ID[\"EPSG\",9001]]]],\n    PRIMEM[\"Greenwich\",0,\n        ANGLEUNIT[\"degree\",0.0174532925199433,\n            ID[\"EPSG\",9122]]],\n    CS[ellipsoidal,2],\n        AXIS[\"latitude\",north,\n            ORDER[1],\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]],\n        AXIS[\"longitude\",east,\n            ORDER[2],\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]]"))
 bc = terra::project(bc, terra::crs(inf_countries))
 
+# Read in the metadata from Earth Env for Hydroclim variables, soil variables, etc.
 ncInfo<-read.table("./other/nc_info.txt",sep = "|", header = TRUE, stringsAsFactors = FALSE)
 ncInfo$Unit <- gsub("\\[|\\]", "", ncInfo$Unit)  # Remove brackets from units
 ncInfo<-ncInfo[, -(ncol(ncInfo))]
 ncInfo<-ncInfo[,-1]
+ncInfo = tidyr::as_tibble(ncInfo)
 
 
 # Read in the hydroclimatic variables downloaded from https://www.earthenv.org/
@@ -31,56 +33,56 @@ ncInfo<-ncInfo[,-1]
 # file in!
 if(reclip_hydroclim){
   hydroclim_all = terra::rast(paste0(onedrive_wd,"../../Downloads/hydroclim_average+sum.nc"))
-# hydro_*_01 = Annual Mean Upstream Temperature
-# hydro_*_02 = Mean Upstream Diurnal Range (Mean of monthly (max temp - min temp))
-# hydro_*_03 = Upstream Isothermality (hydro_02 / hydro_07) (* 100)
-# hydro_*_04 = Upstream Temperature Seasonality (standard deviation *100)
-# hydro_*_05 = Maximum Upstream Temperature of Warmest Month
-# hydro_*_06 = Minimum Upstream Temperature of Coldest Month
-# hydro_*_07 = Upstream Temperature Annual Range (hydro_05 - hydro_06)
-# hydro_*_08 = Mean Upstream Temperature of Wettest Quarter
-# hydro_*_09 = Mean Upstream Temperature of Driest Quarter
-# hydro_*_10 = Mean Upstream Temperature of Warmest Quarter
-# hydro_*_11 = Mean Upstream Temperature of Coldest Quarter
-# hydro_*_12 = Annual Upstream Precipitation
-# hydro_*_13 = Upstream Precipitation of Wettest Month
-# hydro_*_14 = Upstream Precipitation of Driest Month
-# hydro_*_15 = Upstream Precipitation Seasonality (Coefficient of Variation)
-# hydro_*_16 = Upstream Precipitation of Wettest Quarter
-# hydro_*_17 = Upstream Precipitation of Driest Quarter
-# hydro_*_18 = Upstream Precipitation of Warmest Quarter
-# hydro_*_19 = Upstream Precipitation of Coldest Quarter
-
-# These are the variables that are contained in this file. We are going to 
-# just use the annual mean temperature, maximum temp of warmest month (lakes that 
-# go above 15-18 degrees C at any point in the year are flagged as potential habitat
-# for Golden Mussels.)
-
-hydroclim = hydroclim_all[[c(1,5)]]
-names(hydroclim) = c("annual_mean_temp", "max_temp_warmest_month")
-
-# This lapply loop trims each raster layer for each of the 
-# infected countries, saving those to the onedrive raster data folder, in a 
-c(inf_countries$NAME_0,'BC') |> 
-  lapply(\(x) {
-    print(paste0("Working on termperature for ",x))
-    the_country = inf_countries[inf_countries$NAME_0 == x,]
-    # It's not a country... but let's pop BC in here, if that's the name we're coding for.
-    if(x == 'BC') the_country = bc
-    country_e = ext(the_country)
-    x_for_filename = snakecase::to_snake_case(x)
-    # Crop the rasters in turn.
-    for(rast_type in names(hydroclim)){
-      # Check to see if this file has been made already. If not, make it!
-      if(!file.exists(paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))){
-        the_country_r = terra::mask(terra::crop(hydroclim[[rast_type]], country_e), the_country)
-        terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+  # hydro_*_01 = Annual Mean Upstream Temperature
+  # hydro_*_02 = Mean Upstream Diurnal Range (Mean of monthly (max temp - min temp))
+  # hydro_*_03 = Upstream Isothermality (hydro_02 / hydro_07) (* 100)
+  # hydro_*_04 = Upstream Temperature Seasonality (standard deviation *100)
+  # hydro_*_05 = Maximum Upstream Temperature of Warmest Month
+  # hydro_*_06 = Minimum Upstream Temperature of Coldest Month
+  # hydro_*_07 = Upstream Temperature Annual Range (hydro_05 - hydro_06)
+  # hydro_*_08 = Mean Upstream Temperature of Wettest Quarter
+  # hydro_*_09 = Mean Upstream Temperature of Driest Quarter
+  # hydro_*_10 = Mean Upstream Temperature of Warmest Quarter
+  # hydro_*_11 = Mean Upstream Temperature of Coldest Quarter
+  # hydro_*_12 = Annual Upstream Precipitation
+  # hydro_*_13 = Upstream Precipitation of Wettest Month
+  # hydro_*_14 = Upstream Precipitation of Driest Month
+  # hydro_*_15 = Upstream Precipitation Seasonality (Coefficient of Variation)
+  # hydro_*_16 = Upstream Precipitation of Wettest Quarter
+  # hydro_*_17 = Upstream Precipitation of Driest Quarter
+  # hydro_*_18 = Upstream Precipitation of Warmest Quarter
+  # hydro_*_19 = Upstream Precipitation of Coldest Quarter
+  
+  # These are the variables that are contained in this file. We are going to 
+  # just use the annual mean temperature, maximum temp of warmest month (lakes that 
+  # go above 15-18 degrees C at any point in the year are flagged as potential habitat
+  # for Golden Mussels.)
+  
+  hydroclim = hydroclim_all[[c(1,5)]]
+  names(hydroclim) = c("annual_mean_temp", "max_temp_warmest_month")
+  
+  # This lapply loop trims each raster layer for each of the 
+  # infected countries, saving those to the onedrive raster data folder, in a 
+  c(inf_countries$NAME_0,'BC') |> 
+    lapply(\(x) {
+      print(paste0("Working on termperature for ",x))
+      the_country = inf_countries[inf_countries$NAME_0 == x,]
+      # It's not a country... but let's pop BC in here, if that's the name we're coding for.
+      if(x == 'BC') the_country = bc
+      country_e = ext(the_country)
+      x_for_filename = snakecase::to_snake_case(x)
+      # Crop the rasters in turn.
+      for(rast_type in names(hydroclim)){
+        # Check to see if this file has been made already. If not, make it!
+        if(!file.exists(paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))){
+          the_country_r = terra::mask(terra::crop(hydroclim[[rast_type]], country_e), the_country)
+          terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+        }
       }
-    }
-  })
-
-rm(hydroclim); rm(hydroclim_all)
-invisible(gc())
+    })
+  
+  rm(hydroclim); rm(hydroclim_all)
+  invisible(gc())
 }
 
 if(reclip_slope){
