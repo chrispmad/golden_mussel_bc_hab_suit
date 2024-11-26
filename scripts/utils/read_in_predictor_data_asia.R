@@ -86,6 +86,6 @@ asian_country_r = c(asian_country_temps_merged, asian_country_max_warmest_merged
                     asian_country_pH_merged)
 rm(asian_country_temps_merged, asian_country_max_warmest_merged, asian_country_slope_merged,
    asian_country_clay_merged, asian_country_silt_merged, asian_country_sand_merged, asian_country_carbon_merged,
-   asian_country_pH_merged)
+   asian_country_pH_merged, asian_sand, asian_silt, asian_slope, asian_clay, asian_carbon, asian_pH)
 
 # All Asian countries now combined!

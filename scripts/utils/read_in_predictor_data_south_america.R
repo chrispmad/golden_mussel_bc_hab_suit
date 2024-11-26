@@ -79,4 +79,5 @@ south_american_country_r = c(south_american_country_temps_merged, south_american
 
 rm(south_american_country_temps_merged, south_american_country_max_warmest_merged, south_american_slope_merged,
    south_american_country_clay_merged, south_american_country_silt_merged, south_american_country_sand_merged, south_american_country_carbon_merged,
-   south_american_country_pH_merged)
+   south_american_country_pH_merged, south_american_slope, south_american_pH, south_american_carbon,
+   south_american_sand, south_american_silt, south_american_clay)

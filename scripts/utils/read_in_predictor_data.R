@@ -91,7 +91,8 @@ asian_country_r = c(asian_country_temps_merged, asian_country_max_warmest_merged
 
 rm(asian_country_temps_merged, asian_country_max_warmest_merged, asian_country_slope_merged,
    asian_country_clay_merged, asian_country_silt_merged, asian_country_sand_merged, asian_country_carbon_merged,
-   asian_country_pH_merged)
+   asian_country_pH_merged, asian_sand, asian_silt, asian_slope, asian_clay, asian_carbon, asian_pH)
+
 
 # All Asian countries now combined!
 
@@ -175,7 +176,8 @@ south_american_country_r = c(south_american_country_temps_merged, south_american
 
 rm(south_american_country_temps_merged, south_american_country_max_warmest_merged, south_american_slope_merged,
    south_american_country_clay_merged, south_american_country_silt_merged, south_american_country_sand_merged, south_american_country_carbon_merged,
-   south_american_country_pH_merged)
+   south_american_country_pH_merged, south_american_slope, south_american_pH, south_american_carbon,
+   south_american_sand, south_american_silt, south_american_clay)
 # All south_american countries now combined!
 
 # --------------------------
@@ -260,7 +262,8 @@ north_american_country_r = c(north_american_country_temps_merged, north_american
 
 rm(north_american_country_temps_merged, north_american_country_max_warmest_merged, north_american_slope_merged,
    north_american_country_clay_merged, north_american_country_silt_merged, north_american_country_sand_merged, north_american_country_carbon_merged,
-   north_american_country_pH_merged)
+   north_american_country_pH_merged, north_american_pH, north_american_carbon, north_american_sand,
+   north_american_silt, north_american_clay, north_american_slope)
 
 invisible(gc())
 

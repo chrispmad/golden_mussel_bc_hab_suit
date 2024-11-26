@@ -77,6 +77,10 @@ north_american_country_r = c(north_american_country_temps_merged, north_american
                              north_american_country_clay_merged, north_american_country_silt_merged, north_american_country_sand_merged, north_american_country_carbon_merged,
                              north_american_country_pH_merged)
 
+rm(north_american_country_temps_merged, north_american_country_max_warmest_merged, north_american_slope_merged,
+   north_american_country_clay_merged, north_american_country_silt_merged, north_american_country_sand_merged, north_american_country_carbon_merged,
+   north_american_country_pH_merged, north_american_pH, north_american_carbon, north_american_sand,
+   north_american_silt, north_american_clay, north_american_slope)
 # All north_american bits now combined!
 
 invisible(gc())
