@@ -19,6 +19,12 @@ inf_countries = terra::vect(inf_countries)
 inf_countries = terra::project(inf_countries, terra::crs("GEOGCRS[\"unknown\",\n    DATUM[\"unnamed\",\n        ELLIPSOID[\"Spheroid\",6378137,298.257223563,\n            LENGTHUNIT[\"metre\",1,\n                ID[\"EPSG\",9001]]]],\n    PRIMEM[\"Greenwich\",0,\n        ANGLEUNIT[\"degree\",0.0174532925199433,\n            ID[\"EPSG\",9122]]],\n    CS[ellipsoidal,2],\n        AXIS[\"latitude\",north,\n            ORDER[1],\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]],\n        AXIS[\"longitude\",east,\n            ORDER[2],\n            ANGLEUNIT[\"degree\",0.0174532925199433,\n                ID[\"EPSG\",9122]]]]"))
 bc = terra::project(bc, terra::crs(inf_countries))
 
+ncInfo<-read.table("./other/nc_info.txt",sep = "|", header = TRUE, stringsAsFactors = FALSE)
+ncInfo$Unit <- gsub("\\[|\\]", "", ncInfo$Unit)  # Remove brackets from units
+ncInfo<-ncInfo[, -(ncol(ncInfo))]
+ncInfo<-ncInfo[,-1]
+
+
 # Read in the hydroclimatic variables downloaded from https://www.earthenv.org/
 # hydroclim = terra::rast("data/hydroclim_average+sum.nc")
 # Once we've cropped and masked this to infected countries, just read that 
@@ -57,7 +63,7 @@ names(hydroclim) = chosen_rasters
 # infected countries, saving those to the onedrive raster data folder, in a 
 c(inf_countries$NAME_0,'BC') |> 
   lapply(\(x) {
-    print(paste0("Working on ",x))
+    print(paste0("Working on termperature for ",x))
     the_country = inf_countries[inf_countries$NAME_0 == x,]
     # It's not a country... but let's pop BC in here, if that's the name we're coding for.
     if(x == 'BC') the_country = bc
@@ -76,6 +82,99 @@ c(inf_countries$NAME_0,'BC') |>
 rm(hydroclim); rm(hydroclim_all)
 invisible(gc())
 }
+
+if(reclip_slope){
+  slope_all = terra::rast(paste0(onedrive_wd,"/raster/slope.nc"))
+  
+  # 4 layers here - min, max, rage, average
+  
+  
+  # These are the variables that are contained in this file. We are going to 
+  # just use the annual mean temperature, maximum temp of warmest month (lakes that 
+  # go above 15-18 degrees C at any point in the year are flagged as potential habitat
+  # for Golden Mussels.)
+  
+  slope_average = slope_all[[4]]
+  names(slope_average) = "slope_average"
+  
+  # This lapply loop trims each raster layer for each of the 
+  # infected countries, saving those to the onedrive raster data folder, in a 
+  c(inf_countries$NAME_0,'BC') |> 
+    lapply(\(x) {
+      print(paste0("Working on slope for ",x))
+      the_country = inf_countries[inf_countries$NAME_0 == x,]
+      # It's not a country... but let's pop BC in here, if that's the name we're coding for.
+      if(x == 'BC') the_country = bc
+      country_e = ext(the_country)
+      x_for_filename = snakecase::to_snake_case(x)
+      # Crop the rasters in turn.
+      for(rast_type in names(slope_average)){
+        # Check to see if this file has been made already. If not, make it!
+        if(!file.exists(paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))){
+          the_country_r = terra::mask(terra::crop(slope_average[[rast_type]], country_e), the_country)
+          terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+        }
+      }
+    })
+  
+  rm(slope_average); rm(slope_all)
+  invisible(gc())
+}
+
+if(reclip_soil){
+  soil_all = terra::rast(paste0(onedrive_wd,"raster/soil_average.nc"))
+  
+  # 4 layers here - min, max, rage, average
+  
+  
+  # These are the variables that are contained in this file. We are going to 
+  # just use the annual mean temperature, maximum temp of warmest month (lakes that 
+  # go above 15-18 degrees C at any point in the year are flagged as potential habitat
+  # for Golden Mussels.)
+  match_idx <- which(grepl("soil_average.nc", ncInfo[,"netCDF.file...Variable.name"]))
+  if (length(match_idx) == 0) {
+    warning("No match found for the provided string")
+  }
+  
+  
+  names(soil_all) <- gsub("_+$", "", gsub(" ", "_", ncInfo[match_idx, "Variable.explanation"]))
+  
+  soil_all<-soil_all[[c(1:5)]]
+  # This lapply loop trims each raster layer for each of the 
+  # infected countries, saving those to the onedrive raster data folder, in a 
+  c(inf_countries$NAME_0,'BC') |> 
+    lapply(\(x) {
+      print(paste0("Working on soil average for ",x))
+      the_country = inf_countries[inf_countries$NAME_0 == x,]
+      # It's not a country... but let's pop BC in here, if that's the name we're coding for.
+      if(x == 'BC') the_country = bc
+      country_e = ext(the_country)
+      x_for_filename = snakecase::to_snake_case(x)
+      # Crop the rasters in turn.
+      for(rast_type in names(soil_all)){
+        # Check to see if this file has been made already. If not, make it!
+        if(!file.exists(paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))){
+          the_country_r = terra::mask(terra::crop(soil_all[[rast_type]], country_e), the_country)
+          terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+        }
+      }
+    })
+  
+  rm(soil_all); 
+  invisible(gc())
+}
+
+
+
+
+
+
+
+
+
+
+
+
 # Mask and crop the hydroclim data with these countries
 # hydroclim_m = terra::mask(terra::crop(hydroclim, inf_countries), inf_countries)
 
