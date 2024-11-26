@@ -35,7 +35,7 @@ gm_sf = gm_oc |>
 # hydroclim = terra::rast("data/hydroclim_average+sum.nc")
 # Once we've cropped and masked this to infected countries, just read that 
 # file in!
-hydroclim = terra::rast(paste0(onedrive_wd,"raster/hydroclim.tif"))
+# hydroclim = terra::rast(paste0(onedrive_wd,"raster/hydroclim.tif"))
 
 # These are the variables that are contained in this file.
 
@@ -80,21 +80,21 @@ hydroclim = terra::rast(paste0(onedrive_wd,"raster/hydroclim.tif"))
 # water_chem_sf = sf::st_as_sf(water_chem_choice, coords = c("Longitude","Latitude"), crs = 4326)
 
 # Snag polygons for all countries in the world. For mapping purposes!
-whole_world = geodata::world(path = 'data')
-
-
-# Snag polygon for BC.
-bc = bcmaps::bc_bound() |> dplyr::summarise() |> sf::st_transform(4326) |> terra::vect()
-
-ggplot() + 
-  tidyterra::geom_spatvector(data = whole_world) + 
-  tidyterra::geom_spatvector(data = bc, fill = 'purple') + 
-  geom_sf(data = gm_sf, col = 'red')
+# whole_world = geodata::world(path = 'data')
+# 
+# 
+# # Snag polygon for BC.
+# bc = bcmaps::bc_bound() |> dplyr::summarise() |> sf::st_transform(4326) |> terra::vect()
+# 
+# ggplot() + 
+#   tidyterra::geom_spatvector(data = whole_world) + 
+#   tidyterra::geom_spatvector(data = bc, fill = 'purple') + 
+#   geom_sf(data = gm_sf, col = 'red')
 
 # Oh no! Bad data coverage for water chemistry variables!! Bah.
 
 # Find which countries have at least one recorded Golden Mussel.
-inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_filter(gm_sf) |> terra::vect()
+# inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_filter(gm_sf) |> terra::vect()
 
 # Mask and crop the hydroclim data with these countries
 # hydroclim_m = terra::mask(terra::crop(hydroclim, inf_countries), inf_countries)
@@ -151,27 +151,27 @@ inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_f
  #By country
 
 
- pseudos = predicts::backgroundSample(hydroclim_small[[1]],
-                            p = terra::vect(gm_sf),
-                            n = 10000,
-                            extf = 0.9,
-                            tryf = 500) |>
-   tidyr::as_tibble()
+ # pseudos = predicts::backgroundSample(hydroclim_small[[1]],
+ #                            p = terra::vect(gm_sf),
+ #                            n = 10000,
+ #                            extf = 0.9,
+ #                            tryf = 500) |>
+ #   tidyr::as_tibble()
  #names(pseudos)<-c("latitude", "longitude")
  
  
-modVals<-gm_oc |> dplyr::select(latitude, longitude)
-modVals<-modVals[complete.cases(modVals),]
- names(modVals)<-c("x","y")
- names(hydroclim_small)<-gsub("=", "", names(hydroclim_small))
- names(hydroclim_small)<-gsub("_", "", names(hydroclim_small))
- 
-am_i_mortal = ENMevaluate(occs = modVals,
-            envs = hydroclim_small,
-            bg = pseudos,
-            algorithm = 'maxent.jar',
-            partitions = 'block',
-            tune.args = list(fc = 'LQ',
-                             rm = 1))
+# modVals<-gm_oc |> dplyr::select(latitude, longitude)
+# modVals<-modVals[complete.cases(modVals),]
+#  names(modVals)<-c("x","y")
+#  names(hydroclim_small)<-gsub("=", "", names(hydroclim_small))
+#  names(hydroclim_small)<-gsub("_", "", names(hydroclim_small))
+#  
+# am_i_mortal = ENMevaluate(occs = modVals,
+#             envs = hydroclim_small,
+#             bg = pseudos,
+#             algorithm = 'maxent.jar',
+#             partitions = 'block',
+#             tune.args = list(fc = 'LQ',
+#                              rm = 1))
 
             
