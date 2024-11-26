@@ -1,0 +1,78 @@
+---
+title: "Test predictor data"
+author: "John Phelan and Chris Madsen"
+date: "2024-11-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(rinat)
+library(tidyverse)
+# library(DBI)
+library(bcinvadeR)
+library(terra)
+library(sf)
+library(geodata)
+library(ggpubr)
+library(ecospat)
+#library(ENMeval)
+library(readxl)
+library(ENMTools)
+library(data.table)
+
+# Set up file paths
+lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
+proj_wd = getwd()
+onedrive_wd = paste0(str_extract(getwd(),"C:/Users/[A-Z]+/"),"OneDrive - Government of BC/data/")
+
+# Options
+reclip_hydroclim = FALSE
+
+reclip_slope = FALSE
+
+reclip_soil = FALSE
+
+#rerun_maxent_in_asia = TRUE
+
+chosen_rasters = c("annual_mean_temp","max_temp_warmest_month", "slope_average",
+                    "clay_content_mass_fraction", "silt_content_mass_fraction", 
+                   "sand_content_mass_fraction", "soil_organic_carbon", "soil_pH_in_H2O")
+
+source("get_occurrence_records.R")
+
+source("clip_predictor_data_to_areas_of_interest.R")
+
+source("read_in_predictor_data.R")
+
+source("split_occurrence_records_by_area.R")
+
+source("get_pseudo_occurrences.R")
+
+invisible(gc())
+
+```
+
+## R Markdown
+
+```{r get_predictor_values}
+
+for (raster_var in unique(names(asian_country_r))) {
+  asian_occs[[raster_var]] <- terra::extract(asian_country_r[[raster_var]],
+                                             asian_occs[,c("x","y")], ID = FALSE)[[raster_var]]
+}
+
+setDT(asian_occs)
+
+melt_dat<-melt(asian_occs, id.vars = c(1:2), measure.vars = c(3:ncol(asian_occs)))
+
+ggplot(melt_dat, aes(x = 1, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(title = "Boxplot of Values by Variable") +
+  xlab("Variable") +
+  ylab("Value")
+
+```
+
+
