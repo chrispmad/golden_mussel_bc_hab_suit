@@ -9,83 +9,16 @@ asian_countries = c("China","Hong Kong","Japan","South Korea","Laos","Thailand",
 # Asian Countries
 # -----------------------------
 
-# 1. Annual mean temperature
-asian_country_temps_r = asian_countries |> 
-  lapply(\(x) {
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[1],"_rast.tif"))
-  })
+asian_country_r = purrr::map(chosen_rasters, ~ {
+  rasters = asian_countries |> 
+    lapply(\(x) {
+      x_for_filename = snakecase::to_snake_case(x)
+      terra::rast(paste0(rast_filepath,x_for_filename,"_",.x,"_rast.tif"))
+    })
+  
+  rasters_m <- do.call(terra::mosaic, c(rasters, list(fun = mean)))
+  
+  rasters_m
+}, .progress = TRUE)
 
-asian_country_temps_merged <- do.call(terra::mosaic, c(asian_country_temps_r, list(fun = mean)))
-
-# terra::plot(asian_country_temps_merged)
-
-# 2. Max temp of warmest month
-asian_country_max_warmest_r = asian_countries |> 
-  lapply(\(x) {
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[2],"_rast.tif"))
-  })
-
-asian_country_max_warmest_merged <- do.call(terra::mosaic, c(asian_country_max_warmest_r, list(fun = mean)))
-
-# terra::plot(asian_country_max_warmest_merged)
-
-# 3. Read in slope
-asian_slope <- asian_countries |> 
-  lapply(\(x) { 
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[3],"_rast.tif"))
-  })
-asian_country_slope_merged <- do.call(terra::mosaic, c(asian_slope, list(fun = mean)))
-
-# 4. Read in clay data
-asian_clay <- asian_countries |> 
-  lapply(\(x) { 
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[4],"_rast.tif"))
-  })
-asian_country_clay_merged <- do.call(terra::mosaic, c(asian_clay, list(fun = mean)))
-
-# 5. Read in silt data
-asian_silt <- asian_countries |> 
-  lapply(\(x) { 
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[5],"_rast.tif"))
-  })
-asian_country_silt_merged <- do.call(terra::mosaic, c(asian_silt, list(fun = mean)))
-
-# 6. Read in sand data
-asian_sand <- asian_countries |> 
-  lapply(\(x) { 
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[6],"_rast.tif"))
-  })
-asian_country_sand_merged <- do.call(terra::mosaic, c(asian_sand, list(fun = mean)))
-
-# 7. Read in carbon data
-asian_carbon <- asian_countries |> 
-  lapply(\(x) { 
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[7],"_rast.tif"))
-  })
-asian_country_carbon_merged <- do.call(terra::mosaic, c(asian_carbon, list(fun = mean)))
-
-# 8. Read in silt data
-asian_pH <- asian_countries |> 
-  lapply(\(x) { 
-    x_for_filename = snakecase::to_snake_case(x)
-    terra::rast(paste0(rast_filepath,x_for_filename,"_",chosen_rasters[8],"_rast.tif"))
-  })
-asian_country_pH_merged <- do.call(terra::mosaic, c(asian_pH, list(fun = mean)))
-
-
-# Combine the rasters.
-asian_country_r = c(asian_country_temps_merged, asian_country_max_warmest_merged, asian_country_slope_merged,
-                    asian_country_clay_merged, asian_country_silt_merged, asian_country_sand_merged, asian_country_carbon_merged,
-                    asian_country_pH_merged)
-rm(asian_country_temps_merged, asian_country_max_warmest_merged, asian_country_slope_merged,
-   asian_country_clay_merged, asian_country_silt_merged, asian_country_sand_merged, asian_country_carbon_merged,
-   asian_country_pH_merged, asian_sand, asian_silt, asian_slope, asian_clay, asian_carbon, asian_pH)
-
-# All Asian countries now combined!
+asian_country_r = terra::rast(asian_country_r)
