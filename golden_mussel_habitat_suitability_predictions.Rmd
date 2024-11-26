@@ -7,6 +7,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+
 library(rinat)
 library(tidyverse)
 # library(DBI)
@@ -31,23 +33,34 @@ reclip_hydroclim = FALSE
 
 reclip_slope = FALSE
 
-reclip_soil = TRUE
+reclip_soil = FALSE
 
 rerun_maxent_in_asia = TRUE
+
+# Vectors of country (and province) names
+asian_countries = c("China","Hong Kong","Japan","South Korea","Laos","Thailand","Taiwan")
+
+south_american_countries = c("Argentina","Brazil","Paraguay","Uruguay")
+
+north_america = c("United States","BC")
 
 chosen_rasters = c("annual_mean_temp","max_temp_warmest_month", "slope_average",
                     "clay_content_mass_fraction", "silt_content_mass_fraction", 
                    "sand_content_mass_fraction", "soil_organic_carbon", "soil_pH_in_H2O")
 
-source("get_occurrence_records.R")
+source("scripts/utils/get_occurrence_records.R")
 
-source("clip_predictor_data_to_areas_of_interest.R")
+source("scripts/utils/clip_predictor_data_to_areas_of_interest.R")
 
-source("read_in_predictor_data.R")
+#source("scripts/utils/read_in_predictor_data.R")
 
-source("split_occurrence_records_by_area.R")
+source("scripts/utils/split_occurrence_records_by_area.R")
 
-source("get_pseudo_occurrences.R")
+source("scripts/utils/read_in_predictor_data_asia.R")
+
+source("scripts/utils/get_pseudo_occurrences.R")
+
+invisible(gc())
 
 ```
 
@@ -55,11 +68,13 @@ source("get_pseudo_occurrences.R")
 
 ## Model Details 
 
-```{r}
+```{r maxent_asia}
 
 # ---------------------------------------
 # STEP 1: TRAIN MODEL ON ASIAN DATA
 # ---------------------------------------
+
+
 
 if(rerun_maxent_in_asia){
   asia_model = ENMevaluate(occs = asian_occs,
@@ -67,6 +82,7 @@ if(rerun_maxent_in_asia){
                            bg = asian_pseudos,
                            algorithm = 'maxent.jar',
                            partitions = 'block',
+                           parallel = TRUE,
                            tune.args = list(fc = 'LQ',
                                             rm = c(1:5)))
   saveRDS(asia_model, "Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
@@ -76,6 +92,7 @@ if(rerun_maxent_in_asia){
 } else {
   asia_model = readRDS("Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
 }
+invisible(gc())
 
 # The resulting 5 models seem to all have the same auc.train. Let's just use the first one.
 asia_best_model <- asia_model@models[[which.min(asia_model@results$AICc)]]
@@ -114,7 +131,7 @@ Note: This model's Training Area-Under-Curve (AUC) value was `r asia_model_AUC` 
 
 #### MaxEnt Model for Asian Extent
 
-```{r}
+```{r maxent_plot_asia}
 ggplot() + 
   tidyterra::geom_spatraster(data = asia_best_model_preds) + 
   geom_point(data = asian_occs, aes(x=x, y=y)) + 
@@ -130,7 +147,7 @@ asia_min_suitability_with_occ = invisible(min(terra::extract(asia_best_model_pre
 Note: minimum predicted suitability with a known occurrence of Golden Mussel: `r asia_min_suitability_with_occ`.
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
-```{r}
+```{r maxent_asia_habitat}
 # Apply to convert the predictions for Asia into habitat/not habitat
 asia_preds_hab_or_not = asia_best_model_preds > asia_min_suitability_with_occ
 
@@ -145,8 +162,11 @@ ggplot() +
 
 #### MaxEnt Model for South American Extent
 
-```{r}
+```{r predict_south_america}
 # Apply the Asia model to South America.
+
+source("scripts/utils/read_in_predictor_data_south_america.R")
+
 south_america_preds = terra::predict(south_american_country_r, asia_best_model, type = "response", na.rm=T)
 
 ggplot() + 
@@ -158,7 +178,7 @@ ggplot() +
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
 
-```{r}
+```{r maxent_plot_south_america}
 # Apply the minimum suitable habitat for which we found occurrences in asia,
 # to calculate a habitat-or-not for South America.
 
@@ -175,11 +195,11 @@ ggplot() +
 
 #### MaxEnt Model for North American Extent
 
-```{r}
+```{r predict_north_america_and_plot}
 # ---------------------------------------
 # STEP 3: APPLY MODEL TO NORTH AMERICA
 # ---------------------------------------
-
+source("scripts/utils/read_in_predictor_data_north_america.R")
 # Apply the Asia model to North America.
 north_america_preds = terra::predict(north_american_country_r, asia_best_model, type = "response", na.rm=T)
 
@@ -192,7 +212,7 @@ ggplot() +
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
 
-```{r}
+```{r habitat_north_america}
 # Apply the minimum suitable habitat for which we found occurrences in asia,
 # to calculate a habitat-or-not for north America.
 
@@ -210,7 +230,7 @@ ggplot() +
 
 #### MaxEnt Model for BC Extent
 
-```{r}
+```{r predict_bc_and_plot}
 bc_preds = terra::mask(terra::crop(north_america_preds, bc), bc)
 
 ggplot() + 
@@ -221,7 +241,7 @@ ggplot() +
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
 
-```{r}
+```{r bc_habitat}
 # Apply the minimum suitable habitat for which we found occurrences in asia,
 # to calculate a habitat-or-not for north America.
 
