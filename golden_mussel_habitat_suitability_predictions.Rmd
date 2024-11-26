@@ -29,9 +29,15 @@ onedrive_wd = paste0(str_extract(getwd(),"C:/Users/[A-Z]+/"),"OneDrive - Governm
 # Options
 reclip_hydroclim = FALSE
 
-rerun_maxent_in_asia = FALSE
+reclip_slope = FALSE
 
-chosen_rasters = c("annual_mean_temp","max_temp_warmest_month")
+reclip_soil = TRUE
+
+rerun_maxent_in_asia = TRUE
+
+chosen_rasters = c("annual_mean_temp","max_temp_warmest_month", "slope_average",
+                    "clay_content_mass_fraction", "silt_content_mass_fraction", 
+                   "sand_content_mass_fraction", "soil_organic_carbon", "soil_pH_in_H2O")
 
 source("get_occurrence_records.R")
 
@@ -66,6 +72,7 @@ if(rerun_maxent_in_asia){
   saveRDS(asia_model, "Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
   invisible(gc())
   # Chris' poor machine can barely run the above maxent model.
+  # it took a bit of time for it to run on Jonh's computer too. It was not at all fast.
 } else {
   asia_model = readRDS("Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
 }
