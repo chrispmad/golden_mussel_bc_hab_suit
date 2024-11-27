@@ -60,6 +60,9 @@ source("scripts/utils/read_in_predictor_data_asia.R")
 
 source("scripts/utils/get_pseudo_occurrences.R")
 
+asian_country_r$annual_mean_temp <- asian_country_r$annual_mean_temp/10
+asian_country_r$max_temp_warmest_month <- asian_country_r$max_temp_warmest_month/10
+
 invisible(gc())
 
 ```
@@ -82,9 +85,9 @@ if(rerun_maxent_in_asia){
                            bg = asian_pseudos,
                            algorithm = 'maxent.jar',
                            partitions = 'block',
-                           parallel = TRUE,
-                           tune.args = list(fc = 'LQ',
-                                            rm = c(1:5)))
+                           #parallel = TRUE,
+                           tune.args = list(fc = c('LQ'),
+                                            rm = c(1:3)))
   saveRDS(asia_model, "Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
   invisible(gc())
   # Chris' poor machine can barely run the above maxent model.
@@ -167,7 +170,7 @@ ggplot() +
 
 source("scripts/utils/read_in_predictor_data_south_america.R")
 
-south_america_preds = terra::predict(south_american_country_r, asia_best_model, type = "response", na.rm=T)
+south_america_preds = terra::predict(south_america_r, asia_best_model, type = "response", na.rm=T)
 
 ggplot() + 
   tidyterra::geom_spatraster(data = south_america_preds) + 
@@ -201,7 +204,7 @@ ggplot() +
 # ---------------------------------------
 source("scripts/utils/read_in_predictor_data_north_america.R")
 # Apply the Asia model to North America.
-north_america_preds = terra::predict(north_american_country_r, asia_best_model, type = "response", na.rm=T)
+north_america_preds = terra::predict(north_america_r, asia_best_model, type = "response", na.rm=T)
 
 ggplot() + 
   tidyterra::geom_spatraster(data = north_america_preds) + 
