@@ -22,6 +22,9 @@ library(ENMeval)
 library(readxl)
 library(ENMTools)
 library(data.table)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggthemes)
 
 # Set up file paths
 lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
@@ -44,9 +47,11 @@ south_american_countries = c("Argentina","Brazil","Paraguay","Uruguay")
 
 north_america = c("United States","BC")
 
-chosen_rasters = c("annual_mean_temp","max_temp_warmest_month", "slope_average",
-                    "clay_content_mass_fraction", "silt_content_mass_fraction", 
-                   "sand_content_mass_fraction", "soil_organic_carbon", "soil_pH_in_H2O")
+chosen_rasters = c("annual_mean_temp", "slope_average",
+                    "clay_content_mass_fraction", 
+                    "soil_organic_carbon", "soil_pH_in_H2O")
+
+other_rasters<-c("max_temp_warmest_month","silt_content_mass_fraction", "sand_content_mass_fraction")
 
 source("scripts/utils/get_occurrence_records.R")
 
@@ -61,9 +66,14 @@ source("scripts/utils/read_in_predictor_data_asia.R")
 source("scripts/utils/get_pseudo_occurrences.R")
 
 asian_country_r$annual_mean_temp <- asian_country_r$annual_mean_temp/10
-asian_country_r$max_temp_warmest_month <- asian_country_r$max_temp_warmest_month/10
+#asian_country_r$max_temp_warmest_month <- asian_country_r$max_temp_warmest_month/10
 
 invisible(gc())
+
+
+
+# ggplot()+
+#   geom_map(data = world_map, map= world_map, aes(long, lat, map_id = region))
 
 ```
 
@@ -87,7 +97,7 @@ if(rerun_maxent_in_asia){
                            partitions = 'block',
                            #parallel = TRUE,
                            tune.args = list(fc = c('LQ'),
-                                            rm = c(1:3)))
+                                            rm = c(0.33, 0.66, 1)))
   saveRDS(asia_model, "Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
   invisible(gc())
   # Chris' poor machine can barely run the above maxent model.
@@ -98,7 +108,17 @@ if(rerun_maxent_in_asia){
 invisible(gc())
 
 # The resulting 5 models seem to all have the same auc.train. Let's just use the first one.
-asia_best_model <- asia_model@models[[which.min(asia_model@results$AICc)]]
+#asia_best_model <- asia_model@models[[which.min(asia_model@results$AICc)]]
+
+asia_auc_cbi <- asia_model@results|> 
+  mutate(auc_cbi = (as.numeric(auc.train) + as.numeric(cbi.train) )/ 2) |> 
+  arrange(desc(auc_cbi)) 
+
+topfc<-as.character(asia_auc_cbi[1,]$fc)
+  toprm<-as.character(asia_auc_cbi[1,]$rm)
+  
+asia_best_model <- asia_model@models[[which(asia_model@results$fc == topfc & asia_model@results$rm == toprm)]]
+ 
 
 model_results_df = as.data.frame(asia_best_model@results)
 model_results_df$var = row.names(model_results_df)
@@ -135,30 +155,77 @@ Note: This model's Training Area-Under-Curve (AUC) value was `r asia_model_AUC` 
 #### MaxEnt Model for Asian Extent
 
 ```{r maxent_plot_asia}
-ggplot() + 
-  tidyterra::geom_spatraster(data = asia_best_model_preds) + 
-  geom_point(data = asian_occs, aes(x=x, y=y)) + 
-  scale_fill_distiller(palette = 'Spectral') + 
-  labs(fill = 'Suitable\nHabitat')
+
+asia_bound<-ne_countries(continent = "asia", returnclass = "sf", scale = "medium")
+rast_ext<-ext(asia_best_model_preds)
+map_ext<-ext(asia_bound)
+
+
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(map_ext), xmax = xmax(map_ext),
+        ymin = ymin(map_ext), ymax = ymax(map_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5
+  ) +
+  geom_sf(data = asia_bound, fill = "white", color = "grey", size = 0.1) +  # Keep land white
+  tidyterra::geom_spatraster(data = asia_best_model_preds) +
+  geom_point(data = asian_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_distiller(palette = 'PRGn', limits = c(0.01, 1), na.value = "transparent") +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()
+
 ```
 
 ```{r}
 # Identify what the minimum predicted suitability was for the known occurrence points.
-asia_min_suitability_with_occ = invisible(min(terra::extract(asia_best_model_preds, asian_occs), na.rm=T))
+#asia_min_suitability_with_occ = invisible(min(terra::extract(asia_best_model_preds, asian_occs), na.rm=T))
+
+result_asia<-asia_best_model@results |> as.matrix() |> as.data.frame()
+result_asia = result_asia |> 
+    dplyr::mutate(metric = snakecase::to_snake_case(rownames(result_asia))) |>
+    dplyr::rename(value = V1) |>
+    tidyr::as_tibble() |>
+    dplyr::select(metric, value) 
+
+
+hab_thres<- result_asia |> dplyr::filter(metric %in% "x_10_percentile_training_presence_cloglog_threshold")
+
+asia_min_suitability_with_occ <- hab_thres$value
+
+
 ```
 
-Note: minimum predicted suitability with a known occurrence of Golden Mussel: `r asia_min_suitability_with_occ`.
+Note: minimum predicted suitability with a known occurrence of Golden Mussel: `r asia_min_suitability_with_occ`. The value is the 10 percentile suitability of habitat, to remove any extreme outliers in data.
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
 ```{r maxent_asia_habitat}
 # Apply to convert the predictions for Asia into habitat/not habitat
 asia_preds_hab_or_not = asia_best_model_preds > asia_min_suitability_with_occ
 
-ggplot() + 
-  tidyterra::geom_spatraster(data = asia_preds_hab_or_not) + 
-  geom_point(data = asian_occs, aes(x=x, y=y)) + 
-  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
-  labs(fill = 'Suitable\nHabitat')
+asia_preds_hab_or_not <- terra::as.factor(asia_preds_hab_or_not)
+levels(asia_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
+
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(rast_ext), xmax = xmax(rast_ext),
+        ymin = ymin(rast_ext), ymax = ymax(rast_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5  # Blue rectangle for the sea
+  ) +
+  geom_sf(data = asia_bound, fill = "white", color = "grey", size = 0.1) +  # Land boundary
+  geom_point(data = asian_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +  # Observation points
+  tidyterra::geom_spatraster(data = asia_preds_hab_or_not) +  # Raster layer
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_manual(
+    values = c("FALSE" = "lightgreen", "TRUE" = "purple"),  # Discrete color scale
+    na.value = "transparent"  # Handle NA values
+  ) +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()
 ```
 
 ### Applying Trained Model on South American Extent {.tabset}
@@ -168,15 +235,30 @@ ggplot() +
 ```{r predict_south_america}
 # Apply the Asia model to South America.
 
-source("scripts/utils/read_in_predictor_data_south_america.R")
+invisible(source("scripts/utils/read_in_predictor_data_south_america.R"))
 
 south_america_preds = terra::predict(south_america_r, asia_best_model, type = "response", na.rm=T)
 
-ggplot() + 
-  tidyterra::geom_spatraster(data = south_america_preds) + 
-  geom_point(data = south_american_occs, aes(x=x, y=y)) + 
-  scale_fill_distiller(palette = 'Spectral') + 
-  labs(fill = 'Suitable\nHabitat')
+south_amer_map<-ne_countries(continent = "south america", returnclass = "sf", scale = "medium")
+rast_ext<-ext(south_america_preds)
+map_ext<-ext(south_amer_map)
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(map_ext), xmax = xmax(map_ext),
+        ymin = ymin(map_ext), ymax = ymax(map_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5
+  ) +
+  geom_sf(data = south_amer_map, fill = "white", color = "grey", size = 0.1) +
+  tidyterra::geom_spatraster(data = south_america_preds) +
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_distiller(palette = 'PRGn', limits = c(0.01, 1), na.value = "transparent") +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right")
+
+
 ```
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
@@ -187,11 +269,30 @@ ggplot() +
 
 south_america_preds_hab_or_not = invisible(south_america_preds > asia_min_suitability_with_occ)
 
-ggplot() + 
-  tidyterra::geom_spatraster(data = south_america_preds_hab_or_not) + 
-  geom_point(data = south_american_occs, aes(x=x, y=y)) + 
-  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
-  labs(fill = 'Suitable\nHabitat')
+
+south_america_preds_hab_or_not <- terra::as.factor(south_america_preds_hab_or_not)
+levels(south_america_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
+
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(rast_ext), xmax = xmax(rast_ext),
+        ymin = ymin(rast_ext), ymax = ymax(rast_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5  # Blue rectangle for the sea
+  ) +
+  geom_sf(data = south_amer_bound, fill = "white", color = "grey", size = 0.1) +  # Land boundary
+  geom_point(data = south_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +  # Observation points
+  tidyterra::geom_spatraster(data = south_america_preds_hab_or_not) +  # Raster layer
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_manual(
+    values = c("FALSE" = "lightgreen", "TRUE" = "purple"),  # Discrete color scale
+    na.value = "transparent"  # Handle NA values
+  ) +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right")
+  
 ```
 
 ### Applying Trained Model on North American Extent {.tabset}
@@ -206,11 +307,26 @@ source("scripts/utils/read_in_predictor_data_north_america.R")
 # Apply the Asia model to North America.
 north_america_preds = terra::predict(north_america_r, asia_best_model, type = "response", na.rm=T)
 
-ggplot() + 
-  tidyterra::geom_spatraster(data = north_america_preds) + 
-  geom_point(data = north_american_occs, aes(x=x, y=y)) + 
-  scale_fill_distiller(palette = 'Spectral') + 
-  labs(fill = 'Suitable\nHabitat')
+north_amer_map<-ne_countries(continent = "north america", returnclass = "sf", scale = "medium")
+rast_ext<-ext(north_america_preds)
+map_ext<-ext(north_amer_map)
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(map_ext), xmax = xmax(map_ext),
+        ymin = ymin(map_ext), ymax = ymax(map_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5
+  ) +
+  geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +
+  tidyterra::geom_spatraster(data = north_america_preds) +
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_distiller(palette = 'PRGn', limits = c(0.01, 1), na.value = "transparent") +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right")
+
+
 ```
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
@@ -221,11 +337,28 @@ ggplot() +
 
 north_america_preds_hab_or_not = invisible(north_america_preds > asia_min_suitability_with_occ)
 
-ggplot() + 
-  tidyterra::geom_spatraster(data = north_america_preds_hab_or_not) + 
-  geom_point(data = north_american_occs, aes(x=x, y=y)) + 
-  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
-  labs(fill = 'Suitable\nHabitat')
+north_america_preds_hab_or_not <- terra::as.factor(north_america_preds_hab_or_not)
+levels(north_america_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
+
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(rast_ext), xmax = xmax(rast_ext),
+        ymin = ymin(rast_ext), ymax = ymax(rast_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5  # Blue rectangle for the sea
+  ) +
+  geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +  # Land boundary
+  geom_point(data = south_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +  # Observation points
+  tidyterra::geom_spatraster(data = north_america_preds_hab_or_not) +  # Raster layer
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_manual(
+    values = c("FALSE" = "lightgreen", "TRUE" = "purple"),  # Discrete color scale
+    na.value = "transparent"  # Handle NA values
+  ) +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right")
 
 ```
 
@@ -236,10 +369,23 @@ ggplot() +
 ```{r predict_bc_and_plot}
 bc_preds = terra::mask(terra::crop(north_america_preds, bc), bc)
 
-ggplot() + 
-  tidyterra::geom_spatraster(data = bc_preds) + 
-  scale_fill_distiller(palette = 'Spectral') + 
-  labs(fill = 'Suitable\nHabitat')
+bc_map <- bcmaps::bc_bound()
+map_ext<-ext(bc_map)
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(map_ext), xmax = xmax(map_ext),
+        ymin = ymin(map_ext), ymax = ymax(map_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5
+  ) +
+  geom_sf(data = bc_map, fill = "white", color = "grey", size = 0.1) +
+  tidyterra::geom_spatraster(data = bc_preds) +
+  coord_sf(xlim = c(xmin(map_ext), xmax(map_ext)), 
+           ylim = c(ymin(map_ext), ymax(map_ext))) +
+  scale_fill_distiller(palette = 'PRGn', limits = c(0.01, 1), na.value = "transparent") +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right")
 ```
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
@@ -250,9 +396,26 @@ ggplot() +
 
 bc_preds_hab_or_not = invisible(bc_preds > asia_min_suitability_with_occ)
 
-ggplot() + 
-  tidyterra::geom_spatraster(data = bc_preds_hab_or_not) + 
-  scale_fill_manual(values = c("FALSE" = "lightgreen", "TRUE" = "purple"), na.value = 'transparent') +
-  labs(fill = 'Suitable\nHabitat')
+bc_preds_hab_or_not <- terra::as.factor(bc_preds_hab_or_not)
+levels(bc_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
+
+
+ggplot() +
+  geom_rect(
+    aes(xmin = xmin(map_ext), xmax = xmax(map_ext),
+        ymin = ymin(map_ext), ymax = ymax(map_ext)),
+    fill = "lightblue", color = NA, alpha = 0.5  # Blue rectangle for the sea
+  ) +
+  geom_sf(data = bc_map, fill = "white", color = "grey", size = 0.1) +  # Land boundary
+  tidyterra::geom_spatraster(data = bc_preds_hab_or_not) +  # Raster layer
+  coord_sf(xlim = c(xmin(map_ext), xmax(map_ext)), 
+           ylim = c(ymin(map_ext), ymax(map_ext))) +
+  scale_fill_manual(
+    values = c("FALSE" = "lightgreen", "TRUE" = "purple"),  # Discrete color scale
+    na.value = "transparent"  # Handle NA values
+  ) +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right")
 
 ```
