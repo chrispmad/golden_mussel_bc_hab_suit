@@ -19,6 +19,6 @@ asian_country_r = purrr::map(chosen_rasters, ~ {
   rasters_m <- do.call(terra::mosaic, c(rasters, list(fun = mean)))
   
   rasters_m
-}, .progress = TRUE)
+})
 
 asian_country_r = terra::rast(asian_country_r)
