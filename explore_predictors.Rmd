@@ -35,10 +35,11 @@ reclip_soil = FALSE
 
 #rerun_maxent_in_asia = TRUE
 
-chosen_rasters = c("annual_mean_temp","max_temp_warmest_month", "slope_average",
-                    "clay_content_mass_fraction", "silt_content_mass_fraction", 
-                   "sand_content_mass_fraction", "soil_organic_carbon", "soil_pH_in_H2O")
+chosen_rasters = c("annual_mean_temp", "slope_average",
+                    "clay_content_mass_fraction", 
+                    "soil_organic_carbon", "soil_pH_in_H2O")
 
+other_rasters<-c("max_temp_warmest_month","silt_content_mass_fraction", "sand_content_mass_fraction")
 source("scripts/utils/get_occurrence_records.R")
 
 source("scripts/utils/clip_predictor_data_to_areas_of_interest.R")
