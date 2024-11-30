@@ -33,11 +33,19 @@ reclip_slope = FALSE
 
 reclip_soil = FALSE
 
+reclip_min_temp = FALSE
+
 #rerun_maxent_in_asia = TRUE
 
 chosen_rasters = c("annual_mean_temp", "slope_average",
                     "clay_content_mass_fraction", 
-                    "soil_organic_carbon", "soil_pH_in_H2O")
+                    "soil_organic_carbon", "soil_pH_in_H2O",
+                   "Min.monthlyairtemperatureforJanuary",
+                   "Min.monthlyairtemperatureforFebruary",
+                   "Min.monthlyairtemperatureforMarch",
+                   "Min.monthlyairtemperatureforJuly",
+                   "Min.monthlyairtemperatureforAugust",
+                   "Min.monthlyairtemperatureforSeptember")
 
 other_rasters<-c("max_temp_warmest_month","silt_content_mass_fraction", "sand_content_mass_fraction")
 source("scripts/utils/get_occurrence_records.R")
@@ -113,7 +121,7 @@ total_points<-rbind(asian_occs, asian_pseudos)
 
 setDT(total_points)
 
-melt_dat<-melt(total_points, id.vars = c(1,2,3), measure.vars = (4:ncol(total_points)))
+melt_dat<-melt(total_points, id.vars = c(1,2,ncol(total_points)), measure.vars = (3:ncol(total_points)-1))
 melt_dat$pres <- factor(melt_dat$pres, levels = c(0, 1), labels = c("Absent", "Present"))
 
 ggplot(melt_dat, aes(x = as.factor(pres), y = value, fill = variable)) +
