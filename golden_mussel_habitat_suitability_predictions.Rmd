@@ -26,7 +26,9 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 library(ggthemes)
 library(kableExtra)
-
+library(modEvA)
+library(rSDM)
+source("./scripts/utils/select_min_max_temp_rast_f.R")
 # Set up file paths
 lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
 proj_wd = getwd()
@@ -50,17 +52,9 @@ south_american_countries = c("Argentina","Brazil","Paraguay","Uruguay")
 
 north_america = c("United States","BC")
 
-chosen_rasters = c("annual_mean_temp", "slope_average",
-                    "clay_content_mass_fraction", 
-                    "soil_organic_carbon", "soil_pH_in_H2O",
-                   "Min.monthlyairtemperatureforJanuary",
-                   "Min.monthlyairtemperatureforFebruary",
-                   "Min.monthlyairtemperatureforMarch",
-                   "Min.monthlyairtemperatureforJuly",
-                   "Min.monthlyairtemperatureforAugust",
-                   "Min.monthlyairtemperatureforSeptember")
+chosen_rasters = c("annual_mean_temp", "slope_average","soil_pH_in_H2O", "clay_content_mass_fraction")
 
-other_rasters<-c("max_temp_warmest_month","silt_content_mass_fraction", "sand_content_mass_fraction")
+other_rasters<-c("max_temp_warmest_month", "clay_content_mass_fraction", "silt_content_mass_fraction", "sand_content_mass_fraction","soil_organic_carbon", "soil_organic_carbon")
 
 source("scripts/utils/get_occurrence_records.R")
 
@@ -77,6 +71,7 @@ source("scripts/utils/get_pseudo_occurrences.R")
 asian_country_r$annual_mean_temp <- asian_country_r$annual_mean_temp/10
 #asian_country_r$max_temp_warmest_month <- asian_country_r$max_temp_warmest_month/10
 
+
 invisible(gc())
 
 
@@ -85,6 +80,27 @@ invisible(gc())
 #   geom_map(data = world_map, map= world_map, aes(long, lat, map_id = region))
 
 ```
+
+```{r get_asian_temps, include = FALSE}
+
+asian_temps<-select_temp_rast(asian_countries)
+asian_country_r<-c(asian_country_r, asian_temps)
+asian_occs_sf<- st_as_sf(x = asian_occs, coords = c("x","y"), crs = 4326)
+asian_occs_sf<-st_transform(asian_occs_sf, crs(asian_country_r))
+asian_occs_moved<-points2nearestcell(asian_occs_sf, asian_country_r, layer = 1, move = TRUE, distance = 2000)
+
+occmap(asian_occs_sf,asian_country_r[[1]], pcol = "black")
+occmap(asian_occs_moved, add = TRUE, pcol = "red")
+
+asian_occs_mv<- asian_occs_moved |> 
+  mutate(x = sf::st_coordinates(geometry)[,1], y = sf::st_coordinates(geometry)[,2]) |> 
+  st_drop_geometry()
+
+pointDiff<-setdiff(asian_occs_mv, asian_occs)
+
+
+```
+
 
 # Results {.tabset}
 
@@ -97,14 +113,14 @@ invisible(gc())
 # ---------------------------------------
 
 if(rerun_maxent_in_asia){
-  asia_model = ENMevaluate(occs = asian_occs,
+  asia_model = ENMevaluate(occs = asian_occs_mv,
                            envs = asian_country_r,
                            bg = asian_pseudos,
                            algorithm = 'maxent.jar',
                            partitions = 'block',
                            #parallel = TRUE,
-                           tune.args = list(fc = c('LQ'),
-                                            rm = c(0.33, 0.66, 1)))
+                           tune.args = list(fc = c('L','LQ'),
+                                            rm = c(1:5)))
   saveRDS(asia_model, "Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
   invisible(gc())
   # Chris' poor machine can barely run the above maxent model.
@@ -118,14 +134,10 @@ invisible(gc())
 
 ```{r maxent_asia_vars}
 
-
-
-
-
-
-
 # The resulting 5 models seem to all have the same auc.train. Let's just use the first one.
 #asia_best_model <- asia_model@models[[which.min(asia_model@results$AICc)]]
+
+
 
 asia_auc_cbi <- asia_model@results|> 
   mutate(auc_cbi = (as.numeric(auc.train) + as.numeric(cbi.train) )/ 2) |> 
@@ -136,12 +148,16 @@ topfc<-as.character(asia_auc_cbi[1,]$fc)
   
 asia_best_model <- asia_model@models[[which(asia_model@results$fc == topfc & asia_model@results$rm == toprm)]]
  
+asia_html<-asia_best_model@html
+invisible(file.copy(from = asia_html, to = paste0("./output/MaxEnt_results.html")))
 
 model_results_df = as.data.frame(asia_best_model@results)
 model_results_df$var = row.names(model_results_df)
 asia_model_AUC = model_results_df[model_results_df$var == 'Training.AUC',]$V1
 
 asia_best_model_preds = terra::rast(asia_model@predictions[[which.min(asia_model@results$AICc)]])
+
+
 ```
 
 ### Model performane {.tabset}
@@ -160,10 +176,17 @@ asia_model@tune.settings |> kbl() |> kable_minimal()
 #### Summary details
 Results:
 ```{r}
-asia_model@results |>  dplyr::select(fc, rm, auc.train, cbi.train, AICc, delta.AICc, w.AIC, ncoef) |> 
-  kbl() |> kable_minimal() |> row_spec(3, bold = TRUE) |> 
-  pack_rows("Selected model", 3, 3, label_row_css = "background-color: #666; color: #fff;") |> 
-  column_spec(c(4,5), background = "lightgrey")
+
+summary_models <- asia_model@results |>  dplyr::select(fc, rm, auc.train, cbi.train, AICc, delta.AICc, w.AIC, ncoef) |> data.frame()
+# asia_model@results |>  dplyr::select(fc, rm, auc.train, cbi.train, AICc, delta.AICc, w.AIC, ncoef) |> 
+selected_row <- which(summary_models$fc == topfc & summary_models$rm == toprm)
+
+summary_models |> 
+  kableExtra::kbl() |> 
+  kableExtra::kable_minimal() |> 
+  kableExtra::row_spec(selected_row, bold = TRUE) |> 
+  pack_rows("Selected model", selected_row, selected_row, label_row_css = "background-color: #666; color: #fff;") |> 
+  column_spec(c(4, 5), background = "lightgrey")
 
   
 ```
@@ -171,8 +194,8 @@ asia_model@results |>  dplyr::select(fc, rm, auc.train, cbi.train, AICc, delta.A
 #### Full report
 
 ```{r}
-asia_model@results |> kbl() |> kable_minimal() |> row_spec(3, bold = TRUE) |> 
-  pack_rows("Selected model", 3, 3, label_row_css = "background-color: #666; color: #fff;") |> 
+asia_model@results |> kbl() |> kable_minimal() |> kableExtra::row_spec(selected_row, bold = TRUE) |> 
+  pack_rows("Selected model", selected_row, selected_row, label_row_css = "background-color: #666; color: #fff;") |> 
   column_spec(c(4,5), background = "lightgrey")
 ```
 
@@ -181,8 +204,32 @@ asia_model@results |> kbl() |> kable_minimal() |> row_spec(3, bold = TRUE) |>
 Variable Importance in top model:
 ```{r}
 asia_best_model_var <- asia_model@variable.importance[[which(asia_model@results$fc == topfc & asia_model@results$rm == toprm)]]
+
+asia_best_model_var <- asia_best_model_var |> 
+  mutate(variable = case_when(
+    variable == "Clay_content_mass_fraction" ~ "clay_content",
+    variable == "Min.monthlyairtemperatureforJanuary" ~ "min_air_temp_mins",
+    variable == "Min.monthlyairtemperatureforJuly" ~ "Max_air_temp_mins",
+    variable == "Soil_organic_carbon" ~ "soil_organic_carbon",
+    variable == "Soil_P_h_in_H2O" ~ "soil_ph",
+    variable == "annual_mean_temp" ~ "annual_mean_temp",
+    variable == "slope_average" ~ "slope_avg",
+    TRUE ~ variable
+  ))
+  
 asia_best_model_var |> dplyr::arrange(desc(percent.contribution)) |> kbl() |> kable_minimal()
+
 ```
+
+#### Variable response curves
+```{r repsonse_curve}
+
+response(asia_model@models[[which(asia_model@results$fc == topfc & asia_model@results$rm == toprm)]])
+
+
+```
+
+
 
 Note: This model's Training Area-Under-Curve (AUC) value was `r asia_model_AUC` (values nearer to 1 represent models that are better able to accurately predict the occurrence points given the predictor variables, and an AUC value of 0.5 represents random predictions)
 
@@ -208,7 +255,7 @@ ggplot() +
   geom_point(data = asian_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +
   coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
            ylim = c(ymin(rast_ext), ymax(rast_ext))) +
-  scale_fill_distiller(palette = 'Spectral', limits = c(0.01, 1), na.value = "transparent", direction = -1) +
+  scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
   labs(fill = 'Suitable\nHabitat') +
   theme_map()+
   theme(plot.background = element_rect(fill = 'lightblue'))
@@ -217,7 +264,7 @@ ggplot() +
 
 ```{r}
 # Identify what the minimum predicted suitability was for the known occurrence points.
-#asia_min_suitability_with_occ = invisible(min(terra::extract(asia_best_model_preds, asian_occs), na.rm=T))
+#asian_min_ten_percent_thresh = invisible(min(terra::extract(asia_best_model_preds, asian_occs), na.rm=T))
 
 result_asia<-asia_best_model@results |> as.matrix() |> as.data.frame()
 result_asia = result_asia |> 
@@ -228,18 +275,25 @@ result_asia = result_asia |>
 
 
 hab_thres<- result_asia |> dplyr::filter(metric %in% "x_10_percentile_training_presence_cloglog_threshold")
+min_thresh <- result_asia |> dplyr::filter(metric %in% 
+                                             "minimum_training_presence_cloglog_threshold")
 
-asia_min_suitability_with_occ <- hab_thres$value
+
+#asian_min_ten_percent_thresh <- hab_thres$value
+asian_min_ten_percent_thresh <-min_thresh$value
+
 
 
 ```
 
-Note: minimum predicted suitability with a known occurrence of Golden Mussel: `r asia_min_suitability_with_occ`. The value is the 10 percentile suitability of habitat, to remove any extreme outliers in data.
+Note: minimum predicted suitability with a known occurrence of Golden Mussel: `r asian_min_ten_percent_thresh`. The value is the habitat where 90% of golden mussel observations are found.
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
 ```{r maxent_asia_habitat}
 # Apply to convert the predictions for Asia into habitat/not habitat
-asia_preds_hab_or_not = asia_best_model_preds > asia_min_suitability_with_occ
+asia_preds_hab_or_not = asia_best_model_preds > asian_min_ten_percent_thresh
+
+# asia_min_hab = asia_best_model_preds > asian_min_occ_threshold
 
 asia_preds_hab_or_not <- terra::as.factor(asia_preds_hab_or_not)
 levels(asia_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
@@ -258,6 +312,7 @@ ggplot() +
   labs(fill = 'Suitable\nHabitat') +
   theme_map()+
   theme(plot.background = element_rect(fill = 'lightblue'))
+
 ```
 
 ### Applying Trained Model on South American Extent {.tabset}
@@ -266,6 +321,12 @@ ggplot() +
 
 ```{r get_south_preds, include=FALSE}
 invisible(source("scripts/utils/read_in_predictor_data_south_america.R"))
+
+south_america_temps<-select_temp_rast(south_american_countries)
+south_america_r<-c(south_america_r, south_america_temps)
+
+
+
 ```
 
 
@@ -282,10 +343,11 @@ map_ext<-ext(south_amer_map)
 
 ggplot()+
   geom_sf(data = south_amer_map, fill = "white", color = "grey", size = 0.1) +
+  geom_point(data = south_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +
   tidyterra::geom_spatraster(data = south_america_preds) +
   coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
            ylim = c(ymin(rast_ext), ymax(rast_ext))) +
-  scale_fill_distiller(palette = 'Spectral', limits = c(0.01, 1), na.value = "transparent", direction = -1) +
+  scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
   labs(fill = 'Suitable\nHabitat') +
   theme_map()+
   theme(legend.position = "right",
@@ -302,7 +364,7 @@ invisible(gc())
 # Apply the minimum suitable habitat for which we found occurrences in asia,
 # to calculate a habitat-or-not for South America.
 
-south_america_preds_hab_or_not = invisible(south_america_preds > asia_min_suitability_with_occ)
+south_america_preds_hab_or_not = invisible(south_america_preds > asian_min_ten_percent_thresh)
 
 
 south_america_preds_hab_or_not <- terra::as.factor(south_america_preds_hab_or_not)
@@ -332,6 +394,10 @@ ggplot()+
 
 ```{r get_north_preds, include=FALSE}
 source("scripts/utils/read_in_predictor_data_north_america.R")
+
+north_america_temps<-select_temp_rast(north_america)
+
+north_america_r<-c(north_america_r, north_america_temps)
 ```
 
 
@@ -352,7 +418,7 @@ ggplot()+
   tidyterra::geom_spatraster(data = north_america_preds) +
   coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
            ylim = c(ymin(rast_ext), ymax(rast_ext))) +
-  scale_fill_distiller(palette = 'Spectral', limits = c(0.01, 1), na.value = "transparent", direction = -1) +
+  scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
   labs(fill = 'Suitable\nHabitat') +
   theme_map()+
   theme(legend.position = "right",
@@ -367,7 +433,7 @@ ggplot()+
 # Apply the minimum suitable habitat for which we found occurrences in asia,
 # to calculate a habitat-or-not for north America.
 
-north_america_preds_hab_or_not = invisible(north_america_preds > asia_min_suitability_with_occ)
+north_america_preds_hab_or_not = invisible(north_america_preds > asian_min_ten_percent_thresh)
 
 north_america_preds_hab_or_not <- terra::as.factor(north_america_preds_hab_or_not)
 levels(north_america_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
@@ -405,7 +471,7 @@ ggplot() +
   tidyterra::geom_spatraster(data = bc_preds) +
   coord_sf(xlim = c(xmin(map_ext), xmax(map_ext)), 
            ylim = c(ymin(map_ext), ymax(map_ext))) +
-  scale_fill_distiller(palette = 'Spectral', limits = c(0.01, 1), na.value = "transparent", direction = -1) +
+  scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
   labs(fill = 'Suitable\nHabitat') +
   theme_map()+
   theme(legend.position = "right",
@@ -418,7 +484,7 @@ ggplot() +
 # Apply the minimum suitable habitat for which we found occurrences in asia,
 # to calculate a habitat-or-not for north America.
 
-bc_preds_hab_or_not = invisible(bc_preds > asia_min_suitability_with_occ)
+bc_preds_hab_or_not = invisible(bc_preds > asian_min_ten_percent_thresh)
 
 bc_preds_hab_or_not <- terra::as.factor(bc_preds_hab_or_not)
 levels(bc_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
@@ -439,3 +505,17 @@ ggplot()+
         plot.background = element_rect(fill = 'lightblue'))
 
 ```
+
+
+
+```{r mess_check}
+
+# asia_vals<- terra::extract(asian_country_r, asian_occs, ID = FALSE)
+# 
+# 
+# 
+# comp_south_america<-predicts::mess(south_america_r, asia_vals, full = FALSE)
+# plot(comp_south_america)
+
+```
+
