@@ -43,6 +43,8 @@ reclip_soil = FALSE
 
 rerun_maxent_in_asia = TRUE
 
+rerun_maxent_in_south_america = TRUE
+
 reclip_min_temp = FALSE
 
 # Vectors of country (and province) names
@@ -81,7 +83,7 @@ invisible(gc())
 
 ```
 
-```{r get_asian_temps, include = FALSE}
+```{r get_asian_points, include = FALSE}
 
 asian_temps<-select_temp_rast(asian_countries)
 asian_country_r<-c(asian_country_r, asian_temps)
@@ -233,6 +235,7 @@ response(asia_model@models[[which(asia_model@results$fc == topfc & asia_model@re
 
 Note: This model's Training Area-Under-Curve (AUC) value was `r asia_model_AUC` (values nearer to 1 represent models that are better able to accurately predict the occurrence points given the predictor variables, and an AUC value of 0.5 represents random predictions)
 
+
 ## Model Results
 
 ### Training Model on Asian Occurrence Data {.tabset}
@@ -262,7 +265,7 @@ ggplot() +
 
 ```
 
-```{r}
+```{r thresholds}
 # Identify what the minimum predicted suitability was for the known occurrence points.
 #asian_min_ten_percent_thresh = invisible(min(terra::extract(asia_best_model_preds, asian_occs), na.rm=T))
 
@@ -315,9 +318,9 @@ ggplot() +
 
 ```
 
-### Applying Trained Model on South American Extent {.tabset}
+## Applying Trained Model on South American Extent {.tabset}
 
-#### MaxEnt Model for South American Extent
+### MaxEnt Model for South American Extent
 
 ```{r get_south_preds, include=FALSE}
 invisible(source("scripts/utils/read_in_predictor_data_south_america.R"))
@@ -328,6 +331,7 @@ south_america_r<-c(south_america_r, south_america_temps)
 
 
 ```
+
 
 
 ```{r predict_south_america}
@@ -519,3 +523,201 @@ ggplot()+
 
 ```
 
+
+
+
+
+## Modelling South America occurrences
+
+```{r get_south_preds, include=FALSE}
+if(!south_america_r){
+invisible(source("scripts/utils/read_in_predictor_data_south_america.R"))
+
+south_america_temps<-select_temp_rast(south_american_countries)
+south_america_r<-c(south_america_r, south_america_temps)
+
+}
+
+```
+
+```{r get_sa_points, include = FALSE}
+
+
+sa_occs_sf<- st_as_sf(x = south_american_occs, coords = c("x","y"), crs = 4326)
+sa_occs_sf<-st_transform(sa_occs_sf, crs(south_america_r))
+sa_occs_moved<-points2nearestcell(sa_occs_sf, south_america_r, layer = 1, move = TRUE, distance = 2000)
+
+occmap(sa_occs_sf,south_america_r[[1]], pcol = "black")
+occmap(sa_occs_moved, add = TRUE, pcol = "red")
+
+sa_occs_mv<- sa_occs_moved |> 
+  mutate(x = sf::st_coordinates(geometry)[,1], y = sf::st_coordinates(geometry)[,2]) |> 
+  st_drop_geometry()
+
+pointDiff<-setdiff(asian_occs_mv, asian_occs)
+
+
+```
+
+
+```{r maxent_South_America}
+
+
+
+if(rerun_maxent_in_south_america){
+  
+  sa_pseudos = predicts::backgroundSample(south_america_r,
+                                     p = terra::vect(south_american_occs, geom = c("x", "y")),
+                                     n = 10000,
+                                     extf = 0.9,
+                                     tryf = 500) |>
+  tidyr::as_tibble()
+  
+  sa_model = ENMevaluate(occs = sa_occs_mv,
+                           envs = south_america_r,
+                           bg = sa_pseudos,
+                           algorithm = 'maxent.jar',
+                           partitions = 'block',
+                           #parallel = TRUE,
+                           tune.args = list(fc = c('L','LQ'),
+                                            rm = c(1:5)))
+  saveRDS(sa_model, "Golden_Mussel_MaxEnt_trained_on_SA_Occurrences.rds")
+  invisible(gc())
+  # Chris' poor machine can barely run the above maxent model.
+  # it took a bit of time for it to run on Jonh's computer too.can i run it
+  #It was not at all fast.
+} else {
+  sa_model = readRDS("Golden_Mussel_MaxEnt_trained_on_SA_Occurrences.rds")
+}
+invisible(gc())
+
+
+
+```
+
+```{r maxent_sa_vars}
+
+# The resulting 5 models seem to all have the same auc.train. Let's just use the first one.
+#asia_best_model <- asia_model@models[[which.min(asia_model@results$AICc)]]
+
+
+
+sa_auc_cbi <- sa_model@results|> 
+  mutate(auc_cbi = (as.numeric(auc.train) + as.numeric(cbi.train) )/ 2) |> 
+  arrange(desc(auc_cbi)) 
+
+topfc<-as.character(sa_auc_cbi[1,]$fc)
+  toprm<-as.character(sa_auc_cbi[1,]$rm)
+  
+sa_best_model <- sa_model@models[[which(sa_model@results$fc == topfc & sa_model@results$rm == toprm)]]
+ 
+sa_html<-sa_best_model@html
+invisible(file.copy(from = sa_html, to = paste0("./output/sa_MaxEnt_results.html")))
+
+model_results_df = as.data.frame(sa_best_model@results)
+model_results_df$var = row.names(model_results_df)
+sa_model_AUC = model_results_df[model_results_df$var == 'Training.AUC',]$V1
+
+sa_best_model_preds = terra::rast(sa_model@predictions[[which.min(sa_model@results$AICc)]])
+
+
+```
+
+### Model performane {.tabset}
+
+#### Model settings
+
+Note: Model parameters include:
+
+Tuning Settings:
+```{r sa_tune}
+sa_model@tune.settings |> kbl() |> kable_minimal() 
+
+```
+
+
+#### Summary details
+Results:
+```{r sa_summary}
+
+summary_models <- sa_model@results |>  dplyr::select(fc, rm, auc.train, cbi.train, AICc, delta.AICc, w.AIC, ncoef) |> data.frame()
+# asia_model@results |>  dplyr::select(fc, rm, auc.train, cbi.train, AICc, delta.AICc, w.AIC, ncoef) |> 
+selected_row <- which(summary_models$fc == topfc & summary_models$rm == toprm)
+
+summary_models |> 
+  kableExtra::kbl() |> 
+  kableExtra::kable_minimal() |> 
+  kableExtra::row_spec(selected_row, bold = TRUE) |> 
+  pack_rows("Selected model", selected_row, selected_row, label_row_css = "background-color: #666; color: #fff;") |> 
+  column_spec(c(4, 5), background = "lightgrey")
+
+  
+```
+
+#### Full report
+
+```{r sa_full}
+sa_model@results |> kbl() |> kable_minimal() |> kableExtra::row_spec(selected_row, bold = TRUE) |> 
+  pack_rows("Selected model", selected_row, selected_row, label_row_css = "background-color: #666; color: #fff;") |> 
+  column_spec(c(4,5), background = "lightgrey")
+```
+
+#### Variables contribution 
+
+Variable Importance in top model:
+```{r sa_var_contribute}
+sa_best_model_var <- sa_model@variable.importance[[which(sa_model@results$fc == topfc & asia_model@results$rm == toprm)]]
+
+sa_best_model_var <- sa_best_model_var |> 
+  mutate(variable = case_when(
+    variable == "Clay_content_mass_fraction" ~ "clay_content",
+    variable == "Min.monthlyairtemperatureforJanuary" ~ "min_air_temp_mins",
+    variable == "Min.monthlyairtemperatureforJuly" ~ "Max_air_temp_mins",
+    variable == "Soil_organic_carbon" ~ "soil_organic_carbon",
+    variable == "Soil_P_h_in_H2O" ~ "soil_ph",
+    variable == "annual_mean_temp" ~ "annual_mean_temp",
+    variable == "slope_average" ~ "slope_avg",
+    TRUE ~ variable
+  ))
+  
+sa_best_model_var |> dplyr::arrange(desc(percent.contribution)) |> kbl() |> kable_minimal()
+
+```
+
+#### Variable response curves
+```{r sa_repsonse_curve}
+
+response(sa_model@models[[which(sa_model@results$fc == topfc & sa_model@results$rm == toprm)]])
+
+
+```
+
+
+## Model Results - South America
+
+### Training Model on South America Occurrence Data {.tabset}
+
+
+
+#### MaxEnt Model for South America Extent
+
+```{r maxent_plot_sa}
+
+sa_bound<-ne_countries(continent = "south america", returnclass = "sf", scale = "medium")
+rast_ext<-ext(sa_best_model_preds)
+map_ext<-ext(sa_bound)
+
+
+
+ggplot() +
+  geom_sf(data = sa_bound, fill = "white", color = "grey", size = 0.1) +  # Keep land white
+  tidyterra::geom_spatraster(data = sa_best_model_preds) +
+  geom_point(data = south_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(plot.background = element_rect(fill = 'lightblue'))
+
+```
