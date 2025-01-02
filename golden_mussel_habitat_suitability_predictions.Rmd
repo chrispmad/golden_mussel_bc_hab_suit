@@ -28,6 +28,7 @@ library(ggthemes)
 library(kableExtra)
 library(modEvA)
 library(rSDM)
+library(patchwork)
 source("./scripts/utils/select_min_max_temp_rast_f.R")
 # Set up file paths
 lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
@@ -43,7 +44,7 @@ reclip_soil = FALSE
 
 rerun_maxent_in_asia = TRUE
 
-rerun_maxent_in_south_america = TRUE
+rerun_maxent_in_south_america = FALSE
 
 reclip_min_temp = FALSE
 
@@ -54,7 +55,8 @@ south_american_countries = c("Argentina","Brazil","Paraguay","Uruguay")
 
 north_america = c("United States","BC")
 
-chosen_rasters = c("annual_mean_temp", "slope_average","soil_pH_in_H2O", "clay_content_mass_fraction")
+chosen_rasters = c("annual_mean_temp", "slope_average","soil_pH_in_H2O", "clay_content_mass_fraction",
+                   "sand_content_mass_fraction")
 
 other_rasters<-c("max_temp_warmest_month", "clay_content_mass_fraction", "silt_content_mass_fraction", "sand_content_mass_fraction","soil_organic_carbon", "soil_organic_carbon")
 
@@ -122,7 +124,7 @@ if(rerun_maxent_in_asia){
                            partitions = 'block',
                            #parallel = TRUE,
                            tune.args = list(fc = c('L','LQ'),
-                                            rm = c(1:5)))
+                                            rm = c(1:3)))
   saveRDS(asia_model, "Golden_Mussel_MaxEnt_trained_on_Asian_Occurrences.rds")
   invisible(gc())
   # Chris' poor machine can barely run the above maxent model.
@@ -292,6 +294,7 @@ asian_min_ten_percent_thresh <-min_thresh$value
 Note: minimum predicted suitability with a known occurrence of Golden Mussel: `r asian_min_ten_percent_thresh`. The value is the habitat where 90% of golden mussel observations are found.
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
+
 ```{r maxent_asia_habitat}
 # Apply to convert the predictions for Asia into habitat/not habitat
 asia_preds_hab_or_not = asia_best_model_preds > asian_min_ten_percent_thresh
@@ -318,9 +321,10 @@ ggplot() +
 
 ```
 
-## Applying Trained Model on South American Extent {.tabset}
 
-### MaxEnt Model for South American Extent
+### MaxEnt Model for South American Extent {.tabset}
+
+#### MaxEnt Model for South American Extent
 
 ```{r get_south_preds, include=FALSE}
 invisible(source("scripts/utils/read_in_predictor_data_south_america.R"))
@@ -413,11 +417,25 @@ north_america_r<-c(north_america_r, north_america_temps)
 # Apply the Asia model to North America.
 north_america_preds = terra::predict(north_america_r, asia_best_model, type = "response", na.rm=T)
 
+calc_na<-terra::rast(paste0(onedrive_wd, "CNF/calcium-KR-97648-median_10km_ZN_masked.tif"))
+names(calc_na)<-"value"
+
+calc_na[calc_na <= 1]<-NA
+
 north_amer_map<-ne_countries(continent = "north america", returnclass = "sf", scale = "medium")
 rast_ext<-ext(north_america_preds)
 map_ext<-ext(north_amer_map)
 
-ggplot()+
+calc_na<-terra::project(calc_na, crs(north_amer_map))
+calc_na<-terra::crop(calc_na, north_america_r[[1]])
+
+calc_na_plot <- ggplot() +
+  geom_raster(data = calc_na, aes(x = x, y = y, fill = value), na.rm = TRUE) +
+  scale_fill_viridis_c(na.value = "transparent") +
+  theme_void()
+
+
+pred_na<-ggplot()+
   geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +
   tidyterra::geom_spatraster(data = north_america_preds) +
   coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
@@ -428,7 +446,14 @@ ggplot()+
   theme(legend.position = "right",
         plot.background = element_rect(fill = 'lightblue'))
 
+pred_na 
 
+```
+
+#### NA Calcium
+
+```{r na_calc_plot}
+calc_na_plot
 ```
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
@@ -467,10 +492,12 @@ ggplot() +
 ```{r predict_bc_and_plot}
 bc_preds = terra::mask(terra::crop(north_america_preds, bc), bc)
 
+bc_calc<-terra::mask(terra::crop(calc_na, bc), bc)
+
 bc_map <- bcmaps::bc_bound()
 map_ext<-ext(bc_map)
 
-ggplot() +
+bc_pred_map<-ggplot() +
   geom_sf(data = bc_map, fill = "white", color = "grey", size = 0.1) +
   tidyterra::geom_spatraster(data = bc_preds) +
   coord_sf(xlim = c(xmin(map_ext), xmax(map_ext)), 
@@ -480,7 +507,23 @@ ggplot() +
   theme_map()+
   theme(legend.position = "right",
         plot.background = element_rect(fill = 'lightblue'))
+
+calc_bc_plot <- ggplot() +
+  geom_raster(data = bc_calc, aes(x = x, y = y, fill = value), na.rm = TRUE) +
+  scale_fill_viridis_c(na.value = "transparent") +
+  theme_void()
+
+bc_pred_map
+
 ```
+
+#### BC calcium
+
+```{r bc_calc_plot}
+calc_bc_plot
+```
+
+
 
 #### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
 
