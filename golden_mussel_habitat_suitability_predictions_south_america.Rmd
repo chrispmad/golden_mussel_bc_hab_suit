@@ -110,7 +110,7 @@ sa_occs_mv<- sa_occs_moved |>
   mutate(x = sf::st_coordinates(geometry)[,1], y = sf::st_coordinates(geometry)[,2]) |> 
   st_drop_geometry()
 
-pointDiff<-setdiff(asian_occs_mv, asian_occs)
+pointDiff<-setdiff(sa_occs_mv, south_american_occs)
 
 
 ```
@@ -328,5 +328,121 @@ ggplot() +
   labs(fill = 'Suitable\nHabitat') +
   theme_map()+
   theme(plot.background = element_rect(fill = 'lightblue'))
+
+```
+
+#### MaxEnt Model for North American Extent
+
+```{r get_north_preds, include=FALSE}
+source("scripts/utils/read_in_predictor_data_north_america.R")
+
+north_america_temps<-select_temp_rast(north_america)
+
+north_america_r<-c(north_america_r, north_america_temps)
+```
+
+
+```{r predict_north_america_and_plot}
+# ---------------------------------------
+# STEP 3: APPLY MODEL TO NORTH AMERICA
+# ---------------------------------------
+
+# Apply the Asia model to North America.
+north_america_preds = terra::predict(north_america_r, sa_best_model, type = "response", na.rm=T)
+
+north_amer_map<-ne_countries(continent = "north america", returnclass = "sf", scale = "medium")
+rast_ext<-ext(north_america_preds)
+map_ext<-ext(north_amer_map)
+
+ggplot()+
+  geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +
+  tidyterra::geom_spatraster(data = north_america_preds) +
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right",
+        plot.background = element_rect(fill = 'lightblue'))
+
+
+```
+
+#### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
+
+```{r habitat_north_america}
+# Apply the minimum suitable habitat for which we found occurrences in asia,
+# to calculate a habitat-or-not for north America.
+
+north_america_preds_hab_or_not = invisible(north_america_preds > sa_min_ten_percent_thresh)
+
+north_america_preds_hab_or_not <- terra::as.factor(north_america_preds_hab_or_not)
+levels(north_america_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
+
+
+ggplot() +
+  geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +  # Land boundary
+  geom_point(data = south_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +  # Observation points
+  tidyterra::geom_spatraster(data = north_america_preds_hab_or_not) +  # Raster layer
+  coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
+           ylim = c(ymin(rast_ext), ymax(rast_ext))) +
+  scale_fill_manual(
+    values = c("FALSE" = "lightgreen", "TRUE" = "purple"),  # Discrete color scale
+    na.value = "transparent"  # Handle NA values
+  ) +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right",
+        plot.background = element_rect(fill = 'lightblue'))
+
+```
+
+### Applying Trained Model on just British Columbia {.tabset}
+
+#### MaxEnt Model for BC Extent
+
+```{r predict_bc_and_plot}
+bc_preds = terra::mask(terra::crop(north_america_preds, bc), bc)
+
+bc_map <- bcmaps::bc_bound()
+map_ext<-ext(bc_map)
+
+ggplot() +
+  geom_sf(data = bc_map, fill = "white", color = "grey", size = 0.1) +
+  tidyterra::geom_spatraster(data = bc_preds) +
+  coord_sf(xlim = c(xmin(map_ext), xmax(map_ext)), 
+           ylim = c(ymin(map_ext), ymax(map_ext))) +
+  scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right",
+        plot.background = element_rect(fill = 'lightblue'))
+```
+
+#### MaxEnt Model Transformed: "Habitat-or-Not" Threshold Map
+
+```{r bc_habitat}
+# Apply the minimum suitable habitat for which we found occurrences in asia,
+# to calculate a habitat-or-not for north America.
+
+bc_preds_hab_or_not = invisible(bc_preds > sa_min_ten_percent_thresh)
+
+bc_preds_hab_or_not <- terra::as.factor(bc_preds_hab_or_not)
+levels(bc_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm.1 = c("FALSE", "TRUE")))
+
+
+ggplot()+
+  geom_sf(data = bc_map, fill = "white", color = "grey", size = 0.1) +  # Land boundary
+  tidyterra::geom_spatraster(data = bc_preds_hab_or_not) +  # Raster layer
+  coord_sf(xlim = c(xmin(map_ext), xmax(map_ext)), 
+           ylim = c(ymin(map_ext), ymax(map_ext))) +
+  scale_fill_manual(
+    values = c("FALSE" = "lightgreen", "TRUE" = "purple"),  # Discrete color scale
+    na.value = "transparent"  # Handle NA values
+  ) +
+  labs(fill = 'Suitable\nHabitat') +
+  theme_map()+
+  theme(legend.position = "right",
+        plot.background = element_rect(fill = 'lightblue'))
 
 ```
