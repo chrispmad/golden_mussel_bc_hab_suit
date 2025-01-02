@@ -20,6 +20,7 @@ library(ecospat)
 library(readxl)
 library(ENMTools)
 library(data.table)
+source("./scripts/utils/select_min_max_temp_rast_f.R")
 
 # Set up file paths
 lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
@@ -39,13 +40,8 @@ reclip_min_temp = FALSE
 
 chosen_rasters = c("annual_mean_temp", "slope_average",
                     "clay_content_mass_fraction", 
-                    "soil_organic_carbon", "soil_pH_in_H2O",
-                   "Min.monthlyairtemperatureforJanuary",
-                   "Min.monthlyairtemperatureforFebruary",
-                   "Min.monthlyairtemperatureforMarch",
-                   "Min.monthlyairtemperatureforJuly",
-                   "Min.monthlyairtemperatureforAugust",
-                   "Min.monthlyairtemperatureforSeptember")
+                     "soil_pH_in_H2O", "silt_content_mass_fraction", "sand_content_mass_fraction","soil_organic_carbon"
+                   )
 
 other_rasters<-c("max_temp_warmest_month","silt_content_mass_fraction", "sand_content_mass_fraction")
 source("scripts/utils/get_occurrence_records.R")
@@ -67,6 +63,9 @@ invisible(gc())
 ## Occurrences
 
 ```{r get_predictor_values}
+
+asian_temps<-select_temp_rast(asian_countries)
+asian_country_r<-c(asian_country_r, asian_temps)
 
 for (raster_var in unique(names(asian_country_r))) {
   asian_occs[[raster_var]] <- terra::extract(asian_country_r[[raster_var]],
