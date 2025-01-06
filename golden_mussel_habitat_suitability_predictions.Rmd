@@ -55,8 +55,7 @@ south_american_countries = c("Argentina","Brazil","Paraguay","Uruguay")
 
 north_america = c("United States","BC")
 
-chosen_rasters = c("annual_mean_temp", "slope_average","soil_pH_in_H2O", "clay_content_mass_fraction",
-                   "sand_content_mass_fraction")
+chosen_rasters = c("annual_mean_temp", "slope_average","soil_pH_in_H2O")
 
 other_rasters<-c("max_temp_warmest_month", "clay_content_mass_fraction", "silt_content_mass_fraction", "sand_content_mass_fraction","soil_organic_carbon", "soil_organic_carbon")
 
