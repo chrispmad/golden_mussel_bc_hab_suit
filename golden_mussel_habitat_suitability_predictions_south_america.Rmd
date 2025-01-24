@@ -29,6 +29,7 @@ library(kableExtra)
 library(modEvA)
 library(rSDM)
 source("./scripts/utils/select_min_max_temp_rast_f.R")
+source("./scripts/utils/select_TMax_min_temp_rast_f.R")
 # Set up file paths
 lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
 proj_wd = getwd()
@@ -53,7 +54,7 @@ south_american_countries = c("Argentina","Brazil","Paraguay","Uruguay")
 
 north_america = c("United States","BC")
 
-chosen_rasters = c("annual_mean_temp", "slope_average","soil_pH_in_H2O", "clay_content_mass_fraction")
+chosen_rasters = c("slope_average","soil_pH_in_H2O")
 
 other_rasters<-c("max_temp_warmest_month", "clay_content_mass_fraction", "silt_content_mass_fraction", "sand_content_mass_fraction","soil_organic_carbon", "soil_organic_carbon")
 
@@ -69,7 +70,7 @@ source("scripts/utils/read_in_predictor_data_asia.R")
 
 source("scripts/utils/get_pseudo_occurrences.R")
 
-asian_country_r$annual_mean_temp <- asian_country_r$annual_mean_temp/10
+#asian_country_r$annual_mean_temp <- asian_country_r$annual_mean_temp/10
 #asian_country_r$max_temp_warmest_month <- asian_country_r$max_temp_warmest_month/10
 
 
@@ -92,6 +93,11 @@ invisible(source("scripts/utils/read_in_predictor_data_south_america.R"))
 
 south_america_temps<-select_temp_rast(south_american_countries)
 south_america_r<-c(south_america_r, south_america_temps)
+
+SA_max_temps<-select_max_min_temp_rast(south_american_countries)
+names(SA_max_temps) <- "Max_of_max_temp"
+south_america_r<-c(south_america_r, SA_max_temps)
+rm(SA_max_temps)
 
 
 ```
@@ -251,6 +257,17 @@ response(sa_model@models[[which(sa_model@results$fc == topfc & sa_model@results$
 
 ## Model Results - South America
 
+The model has been trained on:
+
+* Annual mean temperature
+* Average slope
+* pH
+* Minimum temperature by month by country (coldest month, coldest average temperature)
+* warmest average temperature of warmest month by country (warmest month, warmest average temperature)
+
+
+I haven't tested the colinearity of temperature as of yet, so this should be done and the temperature rasters changed if required.
+
 ### Training Model on South America Occurrence Data {.tabset}
 
 
@@ -339,6 +356,12 @@ source("scripts/utils/read_in_predictor_data_north_america.R")
 north_america_temps<-select_temp_rast(north_america)
 
 north_america_r<-c(north_america_r, north_america_temps)
+
+NA_max_temps<-select_max_min_temp_rast("united states")
+names(NA_max_temps) <- "Max_of_max_temp"
+north_america_r<-c(north_america_r, NA_max_temps)
+rm(NA_max_temps)
+
 ```
 
 
@@ -357,6 +380,7 @@ map_ext<-ext(north_amer_map)
 ggplot()+
   geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +
   tidyterra::geom_spatraster(data = north_america_preds) +
+  geom_point(data = north_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +
   coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
            ylim = c(ymin(rast_ext), ymax(rast_ext))) +
   scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
