@@ -30,6 +30,7 @@ library(modEvA)
 library(rSDM)
 library(patchwork)
 source("./scripts/utils/select_min_max_temp_rast_f.R")
+source("./scripts/utils/select_TMax_min_temp_rast_f.R")
 # Set up file paths
 lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
 proj_wd = getwd()
@@ -88,6 +89,13 @@ invisible(gc())
 
 asian_temps<-select_temp_rast(asian_countries)
 asian_country_r<-c(asian_country_r, asian_temps)
+
+asian_max_temps<-select_max_min_temp_rast(asian_countries)
+names(asian_max_temps) <- "Max_of_max_temp"
+asian_country_r<-c(asian_country_r, asian_max_temps)
+
+
+
 asian_occs_sf<- st_as_sf(x = asian_occs, coords = c("x","y"), crs = 4326)
 asian_occs_sf<-st_transform(asian_occs_sf, crs(asian_country_r))
 asian_occs_moved<-points2nearestcell(asian_occs_sf, asian_country_r, layer = 1, move = TRUE, distance = 2000)
@@ -167,7 +175,7 @@ asia_best_model_preds = terra::rast(asia_model@predictions[[which.min(asia_model
 
 #### Model settings
 
-Note: Model parameters include:
+Note: Model parameters include: **`r names(asian_country_r)`**
 
 Tuning Settings:
 ```{r}
@@ -177,6 +185,9 @@ asia_model@tune.settings |> kbl() |> kable_minimal()
 
 
 #### Summary details
+
+The model is selected by looking at the best combination of AUC and Boyce Index.The AUC quantifies the overall ability of the model to distinguish between presence and absence/background data. The Boyce Index evaluates how well the model's predictions match the observed spatial distribution of presences.
+
 Results:
 ```{r}
 
@@ -203,6 +214,8 @@ asia_model@results |> kbl() |> kable_minimal() |> kableExtra::row_spec(selected_
 ```
 
 #### Variables contribution 
+
+The percentage contribution of the variables to the model. The permutation importance is a measure of how heavily the model relies on that variable. Each variable is removed, the model is re-run and the decrease in AUC is recorded. A large decrease in the permutation importance means the model heavily relies on that variable. The values are normalised to give percentages.
 
 Variable Importance in top model:
 ```{r}
@@ -239,8 +252,16 @@ Note: This model's Training Area-Under-Curve (AUC) value was `r asia_model_AUC` 
 
 ## Model Results
 
-### Training Model on Asian Occurrence Data {.tabset}
+The model has been trained on:
 
+* Annual mean temperature
+* Average slope
+* pH
+* Minimum temperature by month by country (coldest month, coldest average temperature)
+* warmest average temperature of warmest month by country (warmest month, warmest average temperature)
+
+
+### Training Model on Asian Occurrence Data {.tabset}
 
 
 #### MaxEnt Model for Asian Extent
@@ -331,6 +352,10 @@ invisible(source("scripts/utils/read_in_predictor_data_south_america.R"))
 south_america_temps<-select_temp_rast(south_american_countries)
 south_america_r<-c(south_america_r, south_america_temps)
 
+SA_max_temps<-select_max_min_temp_rast(south_american_countries)
+names(SA_max_temps) <- "Max_of_max_temp"
+south_america_r<-c(south_america_r, SA_max_temps)
+rm(SA_max_temps)
 
 
 ```
@@ -405,6 +430,11 @@ source("scripts/utils/read_in_predictor_data_north_america.R")
 north_america_temps<-select_temp_rast(north_america)
 
 north_america_r<-c(north_america_r, north_america_temps)
+
+NA_max_temps<-select_max_min_temp_rast("united states")
+names(NA_max_temps) <- "Max_of_max_temp"
+north_america_r<-c(north_america_r, NA_max_temps)
+rm(NA_max_temps)
 ```
 
 
@@ -437,6 +467,7 @@ calc_na_plot <- ggplot() +
 pred_na<-ggplot()+
   geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +
   tidyterra::geom_spatraster(data = north_america_preds) +
+  geom_point(data = north_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +
   coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
            ylim = c(ymin(rast_ext), ymax(rast_ext))) +
   scale_fill_viridis_c(option = 'turbo', limits = c(0.01, 1), na.value = "transparent") +
@@ -469,7 +500,7 @@ levels(north_america_preds_hab_or_not) <- list(data.frame(ID = c(0, 1), fc.LQ_rm
 
 ggplot() +
   geom_sf(data = north_amer_map, fill = "white", color = "grey", size = 0.1) +  # Land boundary
-  geom_point(data = south_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +  # Observation points
+  geom_point(data = north_american_occs, aes(x = x, y = y), size = 2, alpha = 0.5) +  # Observation points
   tidyterra::geom_spatraster(data = north_america_preds_hab_or_not) +  # Raster layer
   coord_sf(xlim = c(xmin(rast_ext), xmax(rast_ext)), 
            ylim = c(ymin(rast_ext), ymax(rast_ext))) +
