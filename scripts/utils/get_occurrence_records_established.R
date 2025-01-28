@@ -15,6 +15,7 @@ library(readxl)
 library(ENMTools)
 library(data.table)
 library(ggplot2)
+library(ggspatial)
 
 source("../ais_prioritization_models/scripts/utils/run_maxent_f.R")
 
@@ -34,6 +35,59 @@ gm_sf = gm_oc |>
 
 
 gmResearch<- gm_oc |> filter(quality_grade == "research") 
+
+gm_other <- gm_oc |> filter(quality_grade != "research")
+
+gmResearch <- st_as_sf(gmResearch, coords = c("longitude", "latitude"))
+gm_other <- st_as_sf(gm_other, coords = c("longitude", "latitude"))
+
+whole_world = geodata::world(path = 'data')
+plot(st_geometry(gmResearch), col = "blue")
+points(st_geometry(gm_other), col = "red")
+lines(whole_world, add = T)
+whole_world_sf <- st_as_sf(whole_world)
+whole_world_sf<-st_transform(whole_world_sf, crs = 4326)
+gmResearch<-st_set_crs(gmResearch,  4326)
+gm_other<-st_set_crs(gm_other, 4326)
+
+ggplot() +
+  geom_sf(data = whole_world_sf, color = "grey", fill = NA) +
+  geom_sf(data = gmResearch, aes(color = "research grade"), size =1.5) +
+  geom_sf(data = gm_other, aes(color = "other grade"), size =1.5) +
+  scale_color_manual(
+    name = "Grades",                     # Legend title
+    values = c("research grade" = "darkgreen", "other grade" = "purple")
+  ) +
+  
+  # Minimal theme
+  theme_minimal()
+
+
+p1 <- ggplot() +
+  geom_sf(data = whole_world_sf, color = "grey", fill = NA) +
+  geom_sf(data = gmResearch, aes(color = "research grade"), size = 1.5) +
+  scale_color_manual(
+    name = "Grades", 
+    values = c("research grade" = "darkgreen")
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+ggsave(filename = file.path( "./images/gmResearch_plot.png"), plot = p1, width = 10, height = 6, dpi = 300)
+
+p2 <- ggplot() +
+  geom_sf(data = whole_world_sf, color = "grey", fill = NA) +
+  geom_sf(data = gm_other, aes(color = "other grade"), size = 1.5) +
+  scale_color_manual(
+    name = "Grades", 
+    values = c("other grade" = "purple")
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# Save Plot 2
+ggsave(filename = file.path("./images/gmOther_plot.png"), plot = p2, width = 10, height = 6, dpi = 300)
+
 
 gmResearch <-gmResearch |> 
   mutate(observed_on = as.Date(observed_on, format = "%Y-%m-%d")) |> 
