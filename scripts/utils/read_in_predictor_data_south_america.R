@@ -17,6 +17,6 @@ south_america_r = purrr::map(chosen_rasters, ~ {
   rasters_m <- do.call(terra::mosaic, c(rasters, list(fun = mean)))
   
   rasters_m
-}, .progress = TRUE)
+})
 
 south_america_r = terra::rast(south_america_r)

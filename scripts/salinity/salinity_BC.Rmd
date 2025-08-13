@@ -1,0 +1,231 @@
+---
+title: "Salinity_BC"
+author: "John Phelan and Chris Madsen"
+date: "2025-01-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(bcdata)
+library(bcmaps)
+library(ggplot2)
+library(readr)
+library(data.table)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(zoo)
+library(RColorBrewer)
+library(leaflet)
+library(leafpop)
+library(viridisLite)
+
+lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
+proj_wd = getwd()
+onedrive_wd = paste0(str_extract(getwd(),"C:/Users/[A-Z]+/"),"OneDrive - Government of BC/R_projects/golden_mussel_bc_hab_suit")
+
+bc<-bc_bound()
+#locations of the lightstations
+lightstations<-st_read(paste0(onedrive_wd,"/data/salinity/BC_lightstation/BC_Lighthouse_DATA.shp"))
+salinity_files<-list.files(path =paste0(onedrive_wd, "/data/salinity/BC_lightstation/Data_Active_Sites_20240620/",
+                           pattern = "*.csv"), full.names = T)
+salinity_readings<-lapply(salinity_files, read_csv)
+salinity_files_inactive<-list.files(path =paste0(onedrive_wd, "/data/salinity/BC_lightstation/DATA_Inactive_Site/"),
+                           pattern = "*.csv", full.names = T)
+salinity_readings_inactive<-lapply(salinity_files_inactive, read_csv)
+
+```
+
+
+```{r salinity_manip}
+
+
+
+sal1<-salinity_readings[[1]]
+colnames(sal1)[1]
+col_names<-sal1[1,]
+
+#gsub(":","",unique(word(colnames(x)[1], end = pmin(str_count(sentences, "\\w+"), 3))))
+
+#get the first cell, where the names of the lightstations are stored and name the list item
+#this - remove the : at the end of the word
+names(salinity_readings)<-lapply(salinity_readings, function(x) 
+  gsub(":","",unique(word(colnames(x)[1], end = pmin(str_count(sentences, "\\w+"), 3)))))
+
+names(salinity_readings)
+year_range = seq(from = 2000, to = 2024, by = 1)
+
+salinity_readings<-lapply(salinity_readings, function(x){
+  names(x)<- as.character(unlist(x[1,]))
+  x<-x[-1,]
+  return(x)
+})
+
+salinity_readings<-lapply(salinity_readings, function(x){
+  x<-pivot_longer(x, !YEAR, names_to = "month", values_to = "value")
+  x <- x |> 
+    mutate(YEAR = as.numeric(YEAR), value = as.numeric(value)) |> 
+    subset(YEAR > 1999) |> 
+    mutate(year_month = as.Date(paste(YEAR, month, "1", sep = "-"), format = "%Y-%b-%d")) |> 
+    subset(value < 50)
+  return(x)
+})
+  
+salinity_readings<-bind_rows(salinity_readings, .id = "lighthouse")
+
+sal1<-salinity_readings_inactive[[1]]
+colnames(sal1)[1]
+col_names<-sal1[1,]
+
+#gsub(":","",unique(word(colnames(x)[1], end = pmin(str_count(sentences, "\\w+"), 3))))
+
+#get the first cell, where the names of the lightstations are stored and name the list item
+#this - remove the : at the end of the word
+names(salinity_readings_inactive)<-lapply(salinity_readings_inactive, function(x) 
+  gsub(":","",unique(word(colnames(x)[1], end = pmin(str_count(sentences, "\\w+"), 3)))))
+
+names(salinity_readings_inactive)
+#year_range = seq(from = 2000, to = 2024, by = 1)
+
+salinity_readings_inactive<-lapply(salinity_readings_inactive, function(x){
+  names(x)<- as.character(unlist(x[1,]))
+  x<-x[-1,]
+  return(x)
+})
+
+salinity_readings_inactive<-lapply(salinity_readings_inactive, function(x){
+  x<-pivot_longer(x, !YEAR, names_to = "month", values_to = "value")
+  x <- x |> 
+    mutate(YEAR = as.numeric(YEAR), value = as.numeric(value)) |> 
+    mutate(year_month = as.Date(paste(YEAR, month, "1", sep = "-"), format = "%Y-%b-%d")) |> 
+    subset(value < 50)
+  return(x)
+})
+
+salinity_readings_inactive<-bind_rows(salinity_readings_inactive, .id = "lighthouse")
+
+
+
+lightstations <- lightstations |> 
+  rename(lighthouse = LIGHSTATIO)
+
+
+merged_light<- salinity_readings |> 
+  left_join(lightstations, by = "lighthouse")
+
+merged_light_inactive<- salinity_readings_inactive |> 
+  left_join((lightstations), by = "lighthouse")
+
+merged_light_all<- rbind(merged_light, merged_light_inactive)
+
+summary_stats <- merged_light_all %>%
+  group_by(lighthouse) %>%
+  summarise(
+    mean_value = mean(value, na.rm = TRUE),
+    min_value = min(value, na.rm = TRUE),
+    max_value = max(value, na.rm = TRUE),
+    n_readings = n(), 
+    year_range = paste(min(YEAR, na.rm = TRUE), max(YEAR, na.rm = TRUE), sep = " - "),
+    geometry = geometry[1],
+    .groups = "drop"
+  )
+summary_stats <- st_as_sf(summary_stats, sf_column_name = "geometry") 
+
+summary_stats <- summary_stats %>%
+  st_as_sf(wkt = "geometry") %>%  # This converts the geometry column to sf
+  st_make_valid()  # Ensure geometries are valid
+
+n_lighthouses <- n_distinct(summary_stats$lighthouse) 
+lighthouse_colors <- viridisLite::viridis(n = n_lighthouses, option = "turbo")
+
+summary_stats <- summary_stats %>%
+  mutate(color = lighthouse_colors[match(lighthouse, unique(lighthouse))])
+
+```
+
+
+```{r lightstations_locations}
+
+summary_stats <- summary_stats %>%
+  mutate(lighthouse = factor(lighthouse, levels = unique(lighthouse)))
+
+ggplot() +
+  geom_sf(data = bc, color = "lightgrey") +
+  geom_sf(data = summary_stats, aes(color = lighthouse)) + 
+  scale_color_manual(values = lighthouse_colors) + 
+  theme_minimal() +
+  theme(legend.title = element_blank()) + 
+  labs(color = "Lighthouse") 
+```
+
+
+```{r salinity_readings, echo=FALSE}
+
+ggplot() +
+  geom_line(data = salinity_readings, aes(x = year_month, y = value, color = lighthouse)) +
+  scale_color_viridis_d(option = "turbo") + # Option: "viridis", "plasma", "cividis", etc.
+  facet_wrap(. ~ lighthouse)+
+  theme_light()
+
+```
+
+```{r salinity_readings_inactive}
+
+ggplot() +
+  geom_line(data = salinity_readings_inactive, aes(x = year_month, y = value, color = lighthouse)) +
+  scale_color_viridis_d(option = "turbo") + # Option: "viridis", "plasma", "cividis", etc.
+  facet_wrap(. ~ lighthouse)+
+  theme_light()
+
+```
+
+
+```{r leaflet_map}
+
+bc = bcmaps::bc_bound() |> sf::st_transform(4326)
+
+summary_stats <- summary_stats %>%
+  st_as_sf() %>%
+  st_make_valid() %>%
+  st_transform(crs = 4326) %>%
+  st_cast("POINT")  # Convert to POINT geometry if it's not already
+
+summary_stats <- summary_stats %>%
+  mutate(
+    lat = st_coordinates(st_geometry(.))[, 2],  # Latitude
+    lng = st_coordinates(st_geometry(.))[, 1]   # Longitude
+  )
+
+leaflet() |> 
+  addTiles() |> 
+
+  addPolygons(
+    data = bc,
+    color = 'black',
+    weight = 2,
+    fillColor = 'transparent'
+  ) |> 
+ 
+  addCircleMarkers(
+    data = summary_stats, 
+    radius = 6, 
+    color = ~color, 
+    fillColor = ~color, 
+    fillOpacity = 1, 
+    stroke = TRUE,
+    weight = 1, 
+    popup = ~paste0(
+      "<strong>Lighthouse:</strong> ", lighthouse, "<br>",
+      "<strong>Mean Value:</strong> ", round(mean_value, 2), "<br>",
+      "<strong>Min Value:</strong> ", round(min_value, 2), "<br>",
+      "<strong>Max Value:</strong> ", round(max_value, 2), "<br>",
+      "<strong>Year Range:</strong> ", year_range, "<br>",
+      
+      "<strong>Number of Readings:</strong> ", n_readings
+    )
+  ) 
+
+```
+

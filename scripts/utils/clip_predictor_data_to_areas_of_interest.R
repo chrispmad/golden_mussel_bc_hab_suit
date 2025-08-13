@@ -25,7 +25,7 @@ ncInfo$Unit <- gsub("\\[|\\]", "", ncInfo$Unit)  # Remove brackets from units
 ncInfo<-ncInfo[, -(ncol(ncInfo))]
 ncInfo<-ncInfo[,-1]
 ncInfo = tidyr::as_tibble(ncInfo)
-
+ncInfo <- ncInfo |> mutate_all(~ str_trim(.x))
 
 # Read in the hydroclimatic variables downloaded from https://www.earthenv.org/
 # hydroclim = terra::rast("data/hydroclim_average+sum.nc")
@@ -74,10 +74,9 @@ if(reclip_hydroclim){
       # Crop the rasters in turn.
       for(rast_type in names(hydroclim)){
         # Check to see if this file has been made already. If not, make it!
-        if(!file.exists(paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))){
-          the_country_r = terra::mask(terra::crop(hydroclim[[rast_type]], country_e), the_country)
-          terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
-        }
+        the_country_r = terra::mask(terra::crop(hydroclim[[rast_type]], country_e), the_country)
+        terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+        
       }
     })
   
@@ -112,10 +111,10 @@ if(reclip_slope){
       # Crop the rasters in turn.
       for(rast_type in names(slope_average)){
         # Check to see if this file has been made already. If not, make it!
-        if(!file.exists(paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))){
-          the_country_r = terra::mask(terra::crop(slope_average[[rast_type]], country_e), the_country)
-          terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
-        }
+        
+        the_country_r = terra::mask(terra::crop(slope_average[[rast_type]], country_e), the_country)
+        terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+        
       }
     })
   
@@ -133,13 +132,18 @@ if(reclip_soil){
   # just use the annual mean temperature, maximum temp of warmest month (lakes that 
   # go above 15-18 degrees C at any point in the year are flagged as potential habitat
   # for Golden Mussels.)
-  match_idx <- which(grepl("soil_average.nc", ncInfo[,"netCDF.file...Variable.name"]))
-  if (length(match_idx) == 0) {
+  
+  match_explanation <- ncInfo |> 
+    filter(grepl("soil_average.nc", netCDF.file...Variable.name)) |> 
+    pull(Variable.explanation)
+  
+  if (length(match_explanation) == 0) {
     warning("No match found for the provided string")
   }
   
   
-  names(soil_all) <- gsub("_+$", "", gsub(" ", "_", ncInfo[match_idx, "Variable.explanation"]))
+  names(soil_all) <- gsub("_+$", "", match_explanation)
+  
   
   soil_all<-soil_all[[c(1:5)]]
   # This lapply loop trims each raster layer for each of the 
@@ -154,11 +158,9 @@ if(reclip_soil){
       x_for_filename = snakecase::to_snake_case(x)
       # Crop the rasters in turn.
       for(rast_type in names(soil_all)){
-        # Check to see if this file has been made already. If not, make it!
-        if(!file.exists(paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))){
-          the_country_r = terra::mask(terra::crop(soil_all[[rast_type]], country_e), the_country)
-          terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
-        }
+        the_country_r = terra::mask(terra::crop(soil_all[[rast_type]], country_e), the_country)
+        terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+        
       }
     })
   
@@ -166,7 +168,49 @@ if(reclip_soil){
   invisible(gc())
 }
 
-
+if(reclip_min_temp){
+  min_temp_all = terra::rast(paste0(onedrive_wd,"../../Downloads/monthly_tmax_average.nc"))
+  
+  # 4 layers here - min, max, rage, average
+  
+  
+  # These are the variables that are contained in this file. We are going to 
+  # just use the annual mean temperature, maximum temp of warmest month (lakes that 
+  # go above 15-18 degrees C at any point in the year are flagged as potential habitat
+  # for Golden Mussels.)
+  match_explanation <- ncInfo |> 
+    filter(grepl("monthly_tmin_average.nc", netCDF.file...Variable.name)) |> 
+    pull(Variable.explanation)
+  
+  if (length(match_explanation) == 0) {
+    warning("No match found for the provided string")
+  }
+  
+  
+  names(min_temp_all) <- gsub("_+$", "", match_explanation)
+  names(min_temp_all) <- gsub(" ", "", names(min_temp_all))
+  min_temp_all <- min_temp_all/10
+  # This lapply loop trims each raster layer for each of the 
+  # infected countries, saving those to the onedrive raster data folder, in a 
+  c(inf_countries$NAME_0,'BC') |> 
+    lapply(\(x) {
+      print(paste0("Working on min temp average average for ",x))
+      the_country = inf_countries[inf_countries$NAME_0 == x,]
+      # It's not a country... but let's pop BC in here, if that's the name we're coding for.
+      if(x == 'BC') the_country = bc
+      country_e = ext(the_country)
+      x_for_filename = snakecase::to_snake_case(x)
+      # Crop the rasters in turn.
+      for(rast_type in names(min_temp_all)){
+        the_country_r = terra::mask(terra::crop(min_temp_all[[rast_type]], country_e), the_country)
+        terra::writeRaster(x = the_country_r, paste0(onedrive_wd,"raster/hydroclim_goldMussel_rast/",x_for_filename,"_",rast_type,"_rast.tif"))
+        
+      }
+    })
+  
+  rm(min_temp_all); 
+  invisible(gc())
+}
 
 
 

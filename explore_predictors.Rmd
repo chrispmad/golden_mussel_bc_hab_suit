@@ -1,0 +1,155 @@
+---
+title: "Test predictor data"
+author: "John Phelan and Chris Madsen"
+date: "2024-11-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(rinat)
+library(tidyverse)
+# library(DBI)
+library(bcinvadeR)
+library(terra)
+library(sf)
+library(geodata)
+library(ggpubr)
+library(ecospat)
+#library(ENMeval)
+library(readxl)
+library(ENMTools)
+library(data.table)
+source("./scripts/utils/select_min_max_temp_rast_f.R")
+
+# Set up file paths
+lan_root = "//SFP.IDIR.BCGOV/S140/S40203/RSD_ FISH & AQUATIC HABITAT BRANCH/General/"
+proj_wd = getwd()
+onedrive_wd = paste0(str_extract(getwd(),"C:/Users/[A-Z]+/"),"OneDrive - Government of BC/data/")
+
+# Options
+reclip_hydroclim = FALSE
+
+reclip_slope = FALSE
+
+reclip_soil = FALSE
+
+reclip_min_temp = FALSE
+
+#rerun_maxent_in_asia = TRUE
+
+chosen_rasters = c("annual_mean_temp", "slope_average",
+                    "clay_content_mass_fraction", 
+                     "soil_pH_in_H2O", "silt_content_mass_fraction", "sand_content_mass_fraction","soil_organic_carbon"
+                   )
+
+other_rasters<-c("max_temp_warmest_month","silt_content_mass_fraction", "sand_content_mass_fraction")
+source("scripts/utils/get_occurrence_records.R")
+
+source("scripts/utils/clip_predictor_data_to_areas_of_interest.R")
+
+source("scripts/utils/read_in_predictor_data.R")
+
+source("scripts/utils/split_occurrence_records_by_area.R")
+
+source("scripts/utils/get_pseudo_occurrences.R")
+
+invisible(gc())
+
+```
+
+# Exploration of variables {.tabset}
+
+## Occurrences
+
+```{r get_predictor_values}
+
+asian_temps<-select_temp_rast(asian_countries)
+asian_country_r<-c(asian_country_r, asian_temps)
+
+for (raster_var in unique(names(asian_country_r))) {
+  asian_occs[[raster_var]] <- terra::extract(asian_country_r[[raster_var]],
+                                             asian_occs[,c("x","y")], ID = FALSE)[[raster_var]]
+}
+
+setDT(asian_occs)
+
+melt_dat<-melt(asian_occs, id.vars = c(1:2), measure.vars = c(3:ncol(asian_occs)))
+
+ggplot(melt_dat, aes(x = 1, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(title = "Boxplot of Values by Variable") +
+  xlab("Variable") +
+  ylab("Value")
+
+```
+
+## Background points
+
+```{r pseudo_absence}
+
+source("scripts/utils/get_pseudo_occurrences.R")
+
+for (raster_var in unique(names(asian_country_r))) {
+  asian_pseudos[[raster_var]] <- terra::extract(asian_country_r[[raster_var]],
+                                             asian_pseudos[,c("x","y")], ID = FALSE)[[raster_var]]
+}
+
+setDT(asian_pseudos)
+
+melt_dat<-melt(asian_pseudos, id.vars = c(1:2), measure.vars = c(3:ncol(asian_pseudos)))
+
+ggplot(melt_dat, aes(x = 1, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(title = "Boxplot of Values by Variable") +
+  xlab("Variable") +
+  ylab("Value")
+
+
+```
+
+## Combined
+
+```{r points_combined}
+asian_occs$pres<-1
+asian_pseudos$pres<-0
+
+total_points<-rbind(asian_occs, asian_pseudos)
+
+setDT(total_points)
+
+melt_dat<-melt(total_points, id.vars = c(1,2,ncol(total_points)), measure.vars = (3:ncol(total_points)-1))
+melt_dat$pres <- factor(melt_dat$pres, levels = c(0, 1), labels = c("Absent", "Present"))
+
+ggplot(melt_dat, aes(x = as.factor(pres), y = value, fill = variable)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(title = "Boxplot of Values by Variable") +
+  ylab("Value")+
+  theme_minimal()+
+  theme(
+    strip.text = element_text(size = 12, face = "bold"), 
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5), 
+    axis.title = element_text(size = 14, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1, face = "bold")
+  )
+```
+
+# Co-variance
+
+```{r coovariance, fig.width=12, fig.height=8}
+
+cor<-raster.cor.matrix(asian_country_r)
+thresh<-0.6
+dists<-as.dist(1-abs(cor))
+clust <- hclust(dists, method = "single")
+groups <- cutree(clust, h = 1 - thresh)
+#jpeg("./images/cluterDendogram.jpg", width = 1200, height = 800)
+## Visualize groups:
+plot(clust, hang = -1)
+rect.hclust(clust, h = 1 - thresh)
+
+```
+

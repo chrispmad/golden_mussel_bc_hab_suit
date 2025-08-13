@@ -11,3 +11,4 @@ output/**
 .quarto
 *.rds
 *.html
+*.png

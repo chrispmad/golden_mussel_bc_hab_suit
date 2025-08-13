@@ -25,153 +25,31 @@ onedrive_wd = "//SFP.IDIR.BCGOV/S140/S40203/WFC AEB/General/2 SCIENCE - Invasive
 # Grab occurrence records for Golden Mussel across the globe from iNaturalist.
 gm_oc = rinat::get_inat_obs(taxon_name = "Limnoperna fortunei",maxresults = 10000)
 
+gm_oc <- gm_oc |> filter(quality_grade == "research") 
 # Convert table from iNaturalist query to a spatial table (sf object)
 gm_sf = gm_oc |> 
   dplyr::rename(Species = common_name) |> 
   tidyr::as_tibble() |> 
   sf::st_as_sf(coords = c("longitude","latitude"), crs = 4326)
 
-# Read in the hydroclimatic variables downloaded from https://www.earthenv.org/
-# hydroclim = terra::rast("data/hydroclim_average+sum.nc")
-# Once we've cropped and masked this to infected countries, just read that 
-# file in!
-# hydroclim = terra::rast(paste0(onedrive_wd,"raster/hydroclim.tif"))
 
-# These are the variables that are contained in this file.
+occs<-read.table("./data/occurrences.txt", sep = "\t", header = T)
 
-# hydro_*_01 = Annual Mean Upstream Temperature
-# hydro_*_02 = Mean Upstream Diurnal Range (Mean of monthly (max temp - min temp))
-# hydro_*_03 = Upstream Isothermality (hydro_02 / hydro_07) (* 100)
-# hydro_*_04 = Upstream Temperature Seasonality (standard deviation *100)
-# hydro_*_05 = Maximum Upstream Temperature of Warmest Month
-# hydro_*_06 = Minimum Upstream Temperature of Coldest Month
-# hydro_*_07 = Upstream Temperature Annual Range (hydro_05 - hydro_06)
-# hydro_*_08 = Mean Upstream Temperature of Wettest Quarter
-# hydro_*_09 = Mean Upstream Temperature of Driest Quarter
-# hydro_*_10 = Mean Upstream Temperature of Warmest Quarter
-# hydro_*_11 = Mean Upstream Temperature of Coldest Quarter
-# hydro_*_12 = Annual Upstream Precipitation
-# hydro_*_13 = Upstream Precipitation of Wettest Month
-# hydro_*_14 = Upstream Precipitation of Driest Month
-# hydro_*_15 = Upstream Precipitation Seasonality (Coefficient of Variation)
-# hydro_*_16 = Upstream Precipitation of Wettest Quarter
-# hydro_*_17 = Upstream Precipitation of Driest Quarter
-# hydro_*_18 = Upstream Precipitation of Warmest Quarter
-# hydro_*_19 = Upstream Precipitation of Coldest Quarter
+occs<-occs |> 
+  rename(lat = Latitude, lon = Longitude, notes = Nota, species = Especie, 
+         presence = Presenca) |> 
+  mutate(date = paste0(Ano,"-",Mes,"-",Dia)) |> 
+  mutate(date = as.Date(date, format = "%Y-%B-%d"))
 
-# # Water chemistry variables from Appendix 3 of 
-# # "Global Groundwater Solute Composition and Concentrations - Wood - 2022 - Groundwater - Wiley Online Library"
-# # link: https://ngwa.onlinelibrary.wiley.com/doi/full/10.1111/gwat.13205
-# water_chem = readxl::read_excel("data/gwat13205-sup-0003-supinfo03.xlsx", skip = 3)
-# 
-# # For now, let's trim water chemistry variables to Ca, Mg, Na, Temp C, and Dissolved Oxyen.
-# water_chem_choice = water_chem |> 
-#   dplyr::select(Latitude:Ca)
-#   #dplyr::select(Latitude:Na,`Dissolved oxygen`,pH,`Temp C`)
-# 
-# # Here are counts of how many rows of non-NA data we have for each of the 
-# # selected variables; this info may prompt us to cut out relatively data-sparse 
-# # variables like Dissolved oxygen.
-# water_chem_choice |> dplyr::reframe(dplyr::across(-c(Latitude,Longitude), \(x) sum(!is.na(x))))
-# 
-# # Make sure we have something for all variables for each coordinate.
-# water_chem_choice = water_chem_choice[complete.cases(water_chem_choice),]
-# 
-# water_chem_sf = sf::st_as_sf(water_chem_choice, coords = c("Longitude","Latitude"), crs = 4326)
+occs<-st_as_sf(occs, coords = c("lon","lat"))
+occs <- occs |> st_set_crs(4326)
+occs<-st_transform(occs, crs = st_crs(gm_sf))
 
-# Snag polygons for all countries in the world. For mapping purposes!
+
+# plot(st_geometry(occs))
 # whole_world = geodata::world(path = 'data')
-# 
-# 
-# # Snag polygon for BC.
-# bc = bcmaps::bc_bound() |> dplyr::summarise() |> sf::st_transform(4326) |> terra::vect()
-# 
-# ggplot() + 
-#   tidyterra::geom_spatvector(data = whole_world) + 
-#   tidyterra::geom_spatvector(data = bc, fill = 'purple') + 
-#   geom_sf(data = gm_sf, col = 'red')
+# lines(whole_world, add = T)
 
-# Oh no! Bad data coverage for water chemistry variables!! Bah.
-
-# Find which countries have at least one recorded Golden Mussel.
-# inf_countries = whole_world |> sf::st_as_sf() |> sf::st_make_valid() |> sf::st_filter(gm_sf) |> terra::vect()
-
-# Mask and crop the hydroclim data with these countries
-# hydroclim_m = terra::mask(terra::crop(hydroclim, inf_countries), inf_countries)
-
-# 1. Simplify the raster?
-# 2. Do we 'do' each country separately, to use smaller rasters?
-# 3. Just straight into MaxEnt?
-
-# avg_mean_temp = hydroclim[[1]]
-# avg_mean_temp[is.na(avg_mean_temp)]
-# 
-# terra::plot(hydroclim[[1]])
-# 
-# usa_hydroclim = terra::crop(hydroclim[[1]], inf_countries[inf_countries$NAME_0 %in% c("United States"),])
-# 
-# usa_hydroclim_just_usa = terra::crop(usa_hydroclim, c(-180,-50, 18, 72))
-# 
-# usa_pseudos = predicts::backgroundSample(usa_hydroclim_just_usa, 
-#                            p = terra::vect(gm_sf), 
-#                            n = 10000,
-#                            extf = 0.9) |> 
-#   tidyr::as_tibble()
-# 
-# names(usa_pseudos) = c('lon','lat')
-# 
-# ggplot() + 
-#   tidyterra::geom_spatraster(data = usa_hydroclim_just_usa) + 
-#   geom_sf(data = sf::st_as_sf(usa_pseudos, coords = c('lon','lat'), crs = 4326))
-# 
-# terra::plot(usa_pseudos, add = T)
-# nrow(usa_pseudos)
-# 
-# usa_pseudos
-
-# pseudoabsences <- predicts::backgroundSample(hydroclim[[1]], 
-#                                              p = terra::vect(gm_sf), 
-#                                              n = 10000,
-#                                              extf = 0.9) |> 
-#   as.data.frame()
-
-#hydroclim_small<-aggregate(hydroclim, fact = 8)
-# target_resolution <- res(hydroclim) * 5
-# target_raster <- rast(nrows = nrow(hydroclim) / 10, ncols = ncol(hydroclim) / 10, 
-#                       ext = ext(hydroclim), crs = crs(hydroclim), resolution = target_resolution)
-# hydroclim_small <- resample(hydroclim, target_raster)
-# 
-# plot(hydroclim_small)
-# 
-# terra::writeRaster(hydroclim_small, paste0(onedrive_wd,"raster/hydroclim_reduced.tif"))
-# 
-#  plot(hydroclim_small)
-#  hydroclim_small[[1]]
- 
- #By country
+gm_sf <- st_join(gm_sf, occs)
 
 
- # pseudos = predicts::backgroundSample(hydroclim_small[[1]],
- #                            p = terra::vect(gm_sf),
- #                            n = 10000,
- #                            extf = 0.9,
- #                            tryf = 500) |>
- #   tidyr::as_tibble()
- #names(pseudos)<-c("latitude", "longitude")
- 
- 
-# modVals<-gm_oc |> dplyr::select(latitude, longitude)
-# modVals<-modVals[complete.cases(modVals),]
-#  names(modVals)<-c("x","y")
-#  names(hydroclim_small)<-gsub("=", "", names(hydroclim_small))
-#  names(hydroclim_small)<-gsub("_", "", names(hydroclim_small))
-#  
-# am_i_mortal = ENMevaluate(occs = modVals,
-#             envs = hydroclim_small,
-#             bg = pseudos,
-#             algorithm = 'maxent.jar',
-#             partitions = 'block',
-#             tune.args = list(fc = 'LQ',
-#                              rm = 1))
-
-            
